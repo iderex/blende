@@ -1,0 +1,134 @@
+# The one configuration both style gates read.
+#
+# Issue #22 keeps `fmt` and `lint` as two checks because they fail for
+# different reasons, and puts their configuration in a single tracked file so
+# that a contributor running locally gets the same answer the gate does, and a
+# change to a rule arrives as a diff a reviewer sees rather than as a setting
+# somebody edited in a workflow.
+#
+# The interpreter version is deliberately absent from this file. Ruff resolves
+# it from `requires-python` in `pyproject.toml`, which is the only place the
+# floor is declared, so a second copy here cannot drift against it:
+#
+#     ruff check --show-settings src/blende/__init__.py | grep target_version
+#     linter.unresolved_target_version = 3.11
+#     formatter.unresolved_target_version = 3.11
+#     analyze.target_version = 3.11
+
+# Written down rather than left implicit. 88 is the formatter's own default at
+# the pinned version, and a width that arrives from a default is a width that
+# can move on an upgrade and reformat the whole tree inside a pull request
+# about something else.
+#
+# Narrow rather than wide, and that was measured rather than preferred. At a
+# width of 110 the formatter joins a refusal message this repository had split
+# across two source lines on purpose:
+#
+#     ruff format --check --diff .
+#     -            f"{DISTRIBUTION} {version} declares a requirement this report "
+#     -            f"cannot place: {refusal}",
+#     +            f"{DISTRIBUTION} {version} declares a requirement this report cannot place: {refusal}",
+#
+# A wider setting makes this tree less readable rather than more, because the
+# text it carries is explanation and not expression.
+line-length = 88
+
+# Where a module's own name is resolved from. The package is a src layout, so
+# `src` is one of them. The lint samples are the other, and for one reason:
+# A005 asks whether a file would shadow a standard library module, which is a
+# question about the name a file would be imported under, so a sample buried
+# in a subdirectory shadows nothing and the rule stays silent on it. Measured,
+# not assumed:
+#
+#     ruff check --isolated --select A005 tests/lint-regressions/hashlib.py
+#     All checks passed!
+#     ruff check --select A005 tests/lint-regressions/hashlib.py
+#     tests/lint-regressions/hashlib.py:1:1: A005 Module `hashlib` shadows a
+#     Python standard-library module
+src = ["src", "tests/lint-regressions"]
+
+# The lint samples exist to be refused, so a run over the tree has to skip
+# them or the gate is red by construction. They are checked directly by path
+# in the proof step, which reaches them because ruff applies an exclusion to a
+# walk and not to a path given on the command line.
+#
+# They do not live under `tests/fixtures/`, and that is a decision rather than
+# an oversight. That directory is declared `binary` in `.gitattributes` and
+# every file in it carries a recorded digest, which is the contract for bytes
+# whose exactness is the point. A lint sample is read by a parser, is edited
+# whenever the rule it proves is revisited, and would drag a manifest
+# regeneration behind every edit. `extend-exclude` rather than `exclude`, so
+# the tool's own exclusions of build output and virtual environments stay in
+# force alongside this one.
+extend-exclude = ["tests/lint-regressions"]
+
+[lint]
+# Enabled one at a time, each with the defect it catches written beside it.
+# The tool's default selection is not taken whole: a rule nobody can explain
+# gets suppressed the first time it fires, and a suppression comment nobody
+# can explain is worse than the rule never having been on. This list grows by
+# a deliberate addition with a reason, and `tests/lint-regressions` grows a
+# sample in the same change.
+select = [
+    # A refusal produced and then dropped. Issue #18 makes a refusal an
+    # exception carrying structured fields, so the mistake has a shape: a
+    # helper that builds the refusal is called for its effect, the caller
+    # forgets that building is not raising, and the run continues past a
+    # violation it had already detected. A blinding violation that continues
+    # is a blind analysis that is not blind.
+    #
+    # Its reach is smaller than that sentence, and the limit is measured in
+    # `tests/lint-regressions/refusal_dropped.py`: the rule fires on an
+    # exception the linter knows by name and not on a subclass declared in the
+    # file, so a package raising its own type is not covered by this half.
+    "PLW0133",
+    # The same mistake in its other spelling, where the refusal is bound to a
+    # name and the name is never read. This one sees the dead binding rather
+    # than the type, so it holds for the package's own refusal as well as for
+    # a builtin, and it fires on any unused local besides.
+    #
+    # What neither of them reaches: a call to a function that returns a
+    # refusal, where the returned value is discarded on the spot. Nothing here
+    # follows a return type across a function boundary, and no rule in the
+    # tool does. Covering that needs a token rule in the greppable invariants
+    # gate, which is issue #28. The residual is written here rather than left
+    # for a reader to find out.
+    "F841",
+    # A mutable default argument, evaluated once at definition and shared by
+    # every call after it. In this package the value carried across calls
+    # would be a parameter declaration or an accumulated record entry, and a
+    # record of decisions that quietly inherits the previous run's entries is
+    # a record that says something false about what was decided.
+    "B006",
+    # A comparison against a floating point literal. The data path is floats,
+    # a blinded value differs from the true one by an offset, and an equality
+    # or an ordering against a literal is how a boundary check ends up right
+    # on one machine and wrong on the next. Confined to float literals below,
+    # because an index compared against 0 or 1 is not this defect.
+    "PLR2004",
+    # A bare `except`, which catches the refusals this package raises along
+    # with everything else. A guard that is swallowed by the handler around it
+    # is a guard that does not bite, and the failure is silent by
+    # construction.
+    "E722",
+    # A module named after one in the standard library. The security deciding
+    # code is written against `hashlib` and `hmac` and nothing else, which is
+    # the whole supply chain argument in issue #1, and a local file that
+    # shadows one of them redirects a digest to code nobody reviewed as
+    # cryptography.
+    "A005",
+    # An f-string in a logging call. The argument is formatted before the
+    # logger decides whether to emit anything, so a disabled logger still
+    # evaluates the value, and issue #18 counts a log line as a written
+    # artefact. This is the leak that survives turning logging off.
+    "G004",
+]
+
+[lint.pylint]
+# PLR2004 flags an unnamed constant in a comparison, and its default treats
+# strings and bytes as acceptable while flagging every number. Integers are
+# added to that list so the rule says what issue #22 asked for and no more: a
+# comparison against a floating point literal. A count compared against 0 or a
+# version part against 3 is not the defect, and a rule that fires on both is a
+# rule somebody starts suppressing.
+allow-magic-value-types = ["int", "str", "bytes"]

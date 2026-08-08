@@ -172,7 +172,11 @@ def main(argv: list[str] | None = None) -> int:
     if not requirements:
         lines.append("  (nothing declared)")
     for requirement in requirements:
-        where = "required" if requirement.extra is None else f"optional [{requirement.extra}]"
+        where = (
+            "required"
+            if requirement.extra is None
+            else f"optional [{requirement.extra}]"
+        )
         resolved = installed_version(requirement.name)
         if resolved is None:
             lines.append(f"  {where} {requirement.name}: not installed")

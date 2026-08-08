@@ -50,7 +50,14 @@ class ProjectMetadataTest(unittest.TestCase):
         # backend moved out of an extra and into the required set, and the
         # backends are a short list somebody reads.
         required = " ".join(self.project.get("dependencies", [])).lower()
-        for backend in ("matplotlib", "plotly", "bokeh", "seaborn", "altair", "pyqtgraph"):
+        for backend in (
+            "matplotlib",
+            "plotly",
+            "bokeh",
+            "seaborn",
+            "altair",
+            "pyqtgraph",
+        ):
             self.assertNotIn(
                 backend,
                 required,

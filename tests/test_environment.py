@@ -73,14 +73,20 @@ class ReportTest(unittest.TestCase):
         )
 
     def test_it_names_the_interpreter_the_floor_and_every_resolved_dependency(self):
-        write_distribution(self.root.name, "blende", "0.0.0", requires=["stand-in-array-library"])
+        write_distribution(
+            self.root.name, "blende", "0.0.0", requires=["stand-in-array-library"]
+        )
         write_distribution(self.root.name, "stand-in-array-library", "9.1.2")
 
         result = self.report()
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn(sys.implementation.name.replace("cpython", "CPython"), result.stdout)
-        self.assertIn(".".join(str(part) for part in sys.version_info[:3]), result.stdout)
+        self.assertIn(
+            sys.implementation.name.replace("cpython", "CPython"), result.stdout
+        )
+        self.assertIn(
+            ".".join(str(part) for part in sys.version_info[:3]), result.stdout
+        )
         self.assertIn("declared interpreter floor: >=3.11", result.stdout)
         self.assertIn("required stand-in-array-library: 9.1.2", result.stdout)
 
@@ -95,10 +101,14 @@ class ReportTest(unittest.TestCase):
         result = self.report()
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("optional [plots] stand-in-plotting-library: not installed", result.stdout)
+        self.assertIn(
+            "optional [plots] stand-in-plotting-library: not installed", result.stdout
+        )
 
     def test_a_required_dependency_that_is_absent_is_named_and_the_run_fails(self):
-        write_distribution(self.root.name, "blende", "0.0.0", requires=["stand-in-array-library"])
+        write_distribution(
+            self.root.name, "blende", "0.0.0", requires=["stand-in-array-library"]
+        )
 
         result = self.report()
 
@@ -126,7 +136,9 @@ class ReportTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("cannot place", result.stderr)
 
-    def test_a_checkout_with_nothing_installed_is_refused_rather_than_read_off_the_project_file(self):
+    def test_a_checkout_with_nothing_installed_is_refused_rather_than_read_off_the_project_file(
+        self,
+    ):
         result = self.report(on_path=False)
 
         self.assertNotEqual(0, result.returncode)
@@ -139,7 +151,9 @@ class ReportTest(unittest.TestCase):
 
 class ParseRequirementTest(unittest.TestCase):
     def test_a_bare_name(self):
-        self.assertEqual(Requirement("numpy", None, "numpy"), parse_requirement("numpy"))
+        self.assertEqual(
+            Requirement("numpy", None, "numpy"), parse_requirement("numpy")
+        )
 
     def test_a_version_specifier_is_not_part_of_the_name(self):
         self.assertEqual("numpy", parse_requirement("numpy>=2.4").name)
@@ -157,7 +171,9 @@ class ParseRequirementTest(unittest.TestCase):
 
     def test_a_marker_carrying_more_than_an_extra_is_refused(self):
         with self.assertRaises(Unplaceable):
-            parse_requirement('matplotlib; extra == "plots" and python_version < "3.12"')
+            parse_requirement(
+                'matplotlib; extra == "plots" and python_version < "3.12"'
+            )
 
     def test_a_line_with_no_readable_name_is_refused(self):
         with self.assertRaises(Unplaceable):
