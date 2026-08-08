@@ -435,15 +435,13 @@ def declared_rule(path: str) -> str | None:
 
 
 def prove_every_rule_bites() -> int:
-    # Every suffix any rule reads, so a sample for a rule about the workflow
-    # files is collected here rather than skipped and then reported as a rule
-    # nothing proves.
-    readable = tuple({suffix for rule in RULES for suffix in rule.suffixes})
-    samples = [
-        path
-        for path in tracked_files()
-        if path.startswith(SAMPLES + "/") and path.endswith(readable)
-    ]
+    # Every tracked file here, whatever its suffix. Collecting by the suffixes
+    # the rules read looks tighter and fails open: deleting a rule deletes the
+    # only suffix its sample was collected under, so the sample disappears from
+    # this mode instead of being reported as one that outlived its rule, and
+    # deleting a rule is the thing this mode exists to notice. A file here that
+    # declares no rule is refused below rather than skipped.
+    samples = [path for path in tracked_files() if path.startswith(SAMPLES + "/")]
     if not samples:
         sys.exit(
             f"No sample was found under {SAMPLES}. Refusing to report that "
