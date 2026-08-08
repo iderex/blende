@@ -60,7 +60,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 SAMPLES = "tests/invariant-regressions"
 
 # The line a sample uses to say which rule it is for. Written as a comment so
-# the sample is still a readable module.
+# the sample is still a readable file of whatever kind the rule reads, and `#`
+# starts a comment in both of the kinds here.
 DECLARES = re.compile(r"^#\s*invariant:\s*(?P<id>[a-z0-9-]+)\s*$")
 
 
@@ -81,6 +82,12 @@ class Rule:
     # The residual. What the pattern does not reach, in the rule rather than in
     # a document beside it.
     blind_to: str
+    # Which file suffixes the rule reads inside its scope. Almost every rule
+    # here is about this package's own source, and the default says so. A rule
+    # whose subject is the workflow files has to say otherwise, because a walk
+    # that assumed Python would skip every file such a rule exists to read and
+    # would report a clean tree for a rule that never looked at anything.
+    suffixes: tuple[str, ...] = (".py",)
     patterns: tuple[re.Pattern[str], ...] = ()
 
 
@@ -211,6 +218,28 @@ RULES: tuple[Rule, ...] = (
             "name."
         ),
         patterns=(re.compile(r"^\s*(?:\w+\.)?(?:Refusal|refuse\w*)\s*\("),),
+    ),
+    Rule(
+        id="action-pin-carries-its-version",
+        issue="#91",
+        refusal=(
+            "an action is pinned to a commit with no version beside it, and "
+            "the comment is the only thing in the file that says which "
+            "release a forty character hash is"
+        ),
+        scope=(".github/",),
+        suffixes=(".yml", ".yaml"),
+        blind_to=(
+            "a comment that disagrees with its hash, which is the other way "
+            "this goes wrong and needs the forge to resolve a hash to a tag "
+            "before anything can say so; a stale comment and an accurate one "
+            "are the same bytes here. It also does not refuse the missing "
+            "hash, which is the neighbouring half of the same clause and is "
+            "zizmor's unpinned-uses audit. A version is read as a comment "
+            "carrying a digit, so a comment naming a release with no number "
+            "in it passes."
+        ),
+        patterns=(re.compile(r"uses:\s*\S+@[0-9a-fA-F]{40}(?!\s*#.*[0-9])"),),
     ),
 )
 
@@ -360,7 +389,7 @@ def scan(paths: Iterable[str], *, scoped: bool) -> Scan:
     for rule in RULES:
         allowed = allowed_imports(rule)
         for path in listing:
-            if not path.endswith(".py"):
+            if not path.endswith(rule.suffixes):
                 continue
             if scoped and not in_scope(rule, path):
                 continue
@@ -406,11 +435,13 @@ def declared_rule(path: str) -> str | None:
 
 
 def prove_every_rule_bites() -> int:
-    samples = [
-        path
-        for path in tracked_files()
-        if path.startswith(SAMPLES + "/") and path.endswith(".py")
-    ]
+    # Every tracked file here, whatever its suffix. Collecting by the suffixes
+    # the rules read looks tighter and fails open: deleting a rule deletes the
+    # only suffix its sample was collected under, so the sample disappears from
+    # this mode instead of being reported as one that outlived its rule, and
+    # deleting a rule is the thing this mode exists to notice. A file here that
+    # declares no rule is refused below rather than skipped.
+    samples = [path for path in tracked_files() if path.startswith(SAMPLES + "/")]
     if not samples:
         sys.exit(
             f"No sample was found under {SAMPLES}. Refusing to report that "
