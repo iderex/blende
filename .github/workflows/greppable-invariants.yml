@@ -1,0 +1,79 @@
+# The check that enforces this repository's text-level invariants.
+#
+# Issue #28 asks for one rule per invariant, as patterns over tracked text
+# rather than as a language parser, so the answer is deterministic and the run
+# stays cheap. The rules, what each one prevents and what each one cannot see
+# are in `tools/greppable_invariants.py`, not here, because a workflow file
+# that carries rules is a workflow file nobody reviews rules in.
+#
+# The job runs the tool twice and the second run is why the first is worth
+# anything. The first reads the tracked tree and refuses a match. The second
+# reads `tests/invariant-regressions/`, where every rule has a sample written
+# to trip it, and refuses a rule no sample trips, a sample naming a rule that
+# does not exist, and a sample that has stopped tripping the rule it names. A
+# rule that has never been shown to bite is a pattern in a file, and this is
+# what stops one shipping.
+#
+# The name matches the check of the same name on iderex/jellyfin-plugin-sso,
+# deliberately, so one habit covers both.
+name: Enforce greppable invariants
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job reads the tracked tree and writes nothing back.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref. The check is cheap and idempotent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  invariants:
+    name: Enforce greppable invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The tool asks git which files are tracked, so it needs the working
+          # tree and nothing more of the history than the checkout gives it.
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        uses: ./.github/actions/declared-floor
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Say which interpreter the rest of this job used
+        run: |
+          set -euo pipefail
+          # Printed rather than assumed. Two of the rules ask the interpreter
+          # which modules are in the standard library, so the answer this job
+          # gives depends on which interpreter answered, and a run that does
+          # not say which one is evidence about no particular version.
+          python -c 'import platform; print(platform.python_implementation(), platform.python_version())'
+
+      - name: Every rule has a sample that trips it
+        run: |
+          set -euo pipefail
+          # First, because a red tree scan is only worth reading once the rules
+          # behind it are known to bite.
+          python tools/greppable_invariants.py --prove
+
+      - name: The tracked tree trips no rule
+        run: |
+          set -euo pipefail
+          python tools/greppable_invariants.py
