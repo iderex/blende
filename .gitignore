@@ -1,0 +1,16 @@
+# What running the suite and building the distribution leave behind.
+#
+# Bytecode caches appear the moment anybody runs the tests, and a build writes
+# into `build/` and `dist/`. None of it is authored and none of it is
+# reproducible byte for byte across interpreters, so an untracked-but-visible
+# tree is how somebody commits a `__pycache__` without noticing.
+__pycache__/
+*.py[cod]
+
+build/
+dist/
+*.egg-info/
+
+# Virtual environments, wherever somebody puts one while working in this tree.
+.venv/
+venv/
