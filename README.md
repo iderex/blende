@@ -7,3 +7,8 @@ the architecture is written down there with its reasons before the code
 that depends on it exists.
 
 See [NOTICE.md](NOTICE.md) for the intended-use notice.
+
+## License
+
+This repository is under the GNU Affero General Public License, version 3.
+The full text is in [LICENSE](LICENSE).
