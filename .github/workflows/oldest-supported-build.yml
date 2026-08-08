@@ -1,0 +1,100 @@
+# The check that makes the declared floor a fact rather than a claim.
+#
+# Analysis environments in this field are old and are not upgraded on anybody's
+# schedule, because upgrading one means re-validating a pipeline that produced
+# published results. A package that claims a floor it never runs against breaks
+# for exactly the groups least able to fix it, and they go back to writing their
+# own, which is the failure this project exists to prevent.
+#
+# `build` already builds and imports on the floor. This job goes one step
+# further and runs the suite there, because that is where the ordinary way a
+# floor gets broken shows up: a syntax form or a standard library call newer
+# than the floor, added by somebody whose own interpreter is newer, which
+# imports and runs everywhere except on the version the metadata promises.
+#
+# The version is not written here. It comes from
+# `.github/actions/declared-floor`, which reads `pyproject.toml`, so the floor
+# moves in the metadata and in this check in one change.
+name: oldest-supported-build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job builds, installs and runs tests on the runner and never
+# writes here.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oldest-supported-build:
+    name: oldest supported build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        uses: ./.github/actions/declared-floor
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Say which interpreter the rest of this job used
+        run: |
+          set -euo pipefail
+          # Printed rather than assumed. Everything below is only evidence about
+          # the floor if this line says the floor.
+          python -c 'import platform; print(platform.python_implementation(), platform.python_version())'
+
+      - name: Build and install the distribution on the floor
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --upgrade build
+          python -m build --outdir dist
+          python -m venv "$RUNNER_TEMP/fresh"
+          "$RUNNER_TEMP/fresh/bin/python" -m pip install --quiet "$(ls dist/*.whl)"
+
+      - name: Run the suite on the floor
+        run: |
+          set -euo pipefail
+          # Run with the interpreter set up above rather than inside the fresh
+          # environment. The suite builds synthetic installed distributions and
+          # asserts what the report does when this package is not installed, so
+          # an interpreter that already has it installed would answer a
+          # different question.
+          python - <<'PY'
+          import sys
+          import unittest
+
+          suite = unittest.defaultTestLoader.discover("tests")
+          count = suite.countTestCases()
+
+          # Fail closed. `unittest` reports an empty run as a successful one, so
+          # a discovery that found nothing - a renamed directory, a module that
+          # would not import under this interpreter - would pass this job while
+          # testing the floor with nothing at all.
+          if count == 0:
+              sys.exit(
+                  "No test was discovered under tests/. Refusing to report a "
+                  "green floor from a run that executed nothing."
+              )
+
+          print(f"{count} test(s) discovered")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
