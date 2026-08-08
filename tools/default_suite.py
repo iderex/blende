@@ -137,9 +137,11 @@ WRITES_OUTSIDE_THE_TEMPORARY_DIRECTORY = Guard(
     ),
     blind_to=(
         "a write from a child process, a write through a file descriptor "
-        "opened before this hook was installed, and a path this hook resolves "
-        "by string rather than by following every symlink on it. Reads are "
-        "not touched: the suite reads the tracked tree on purpose"
+        "opened before this hook was installed, a path given relative to a "
+        "directory descriptor, which this hook cannot name and passes over, "
+        "and a path resolved by string rather than by following every symlink "
+        "on it. Reads are not touched: the suite reads the tracked tree on "
+        "purpose"
     ),
 )
 
@@ -234,19 +236,55 @@ NETWORK_ARMS: dict[str, tuple[Guard, int, str]] = {
     SOCKET_RESOLVE: (REACHES_THE_NETWORK, 0, "The name was {reached!r}."),
 }
 
-# Every one of these carries the path it acts on as its first argument, which
-# is what lets the write guard read them the same way.
-PATH_EVENTS = frozenset(
-    {
-        "os.mkdir",
-        "os.rename",
-        "os.remove",
-        "os.rmdir",
-        "os.symlink",
-        "os.link",
-        "os.truncate",
-    }
-)
+# One row per event the write guard reads: the position of the argument
+# carrying the path it acts on, and the position of the directory descriptor
+# that path may be relative to.
+#
+# The second number is not decoration. `shutil.rmtree` walks a tree by
+# descriptor and calls `os.unlink(name, dir_fd=fd)` with a bare entry name, so
+# a hook resolving that name against the working directory names a file in the
+# checkout that nothing touched. Read against the working directory, the
+# cleanup of this run's own temporary directory was refused as a write into the
+# tracked tree, on a runner and not on the machine the guard was written on,
+# because the same call on Windows does not take the descriptor route.
+#
+# Where a path arrives relative to a descriptor it is passed over rather than
+# resolved, and the write guard says so. Naming the directory behind a
+# descriptor means reading `/proc`, which is one operating system's answer to a
+# question the others answer differently, and a guard that refuses more on
+# Linux than on Windows is the failure this whole check exists to prevent read
+# backwards.
+#
+# `shutil.rmtree` is watched for exactly that reason: the descriptor walk is
+# invisible to this hook, so the call that starts it is read instead, where the
+# path is still whole.
+AT_FDCWD = getattr(os, "AT_FDCWD", -100)
+PATH_EVENTS: dict[str, tuple[int, int | None]] = {
+    "os.mkdir": (0, 2),
+    # The destination rather than the source. A test moving a file into the
+    # tracked tree is the direction that leaves something behind.
+    "os.rename": (1, 3),
+    "os.remove": (0, 1),
+    "os.rmdir": (0, 1),
+    "os.symlink": (1, 2),
+    "os.link": (1, 3),
+    "os.truncate": (0, None),
+    "shutil.rmtree": (0, 1),
+}
+
+
+def argument(args: tuple[object, ...], position: int | None) -> object:
+    """One argument of an audit event, or None where it was not passed.
+
+    The tuple an event carries has grown between interpreter versions:
+    `shutil.rmtree` gained its directory descriptor in 3.12 and this package
+    supports 3.11. Reading by position with a length check keeps the table
+    above one table rather than one per version.
+    """
+    if position is None or position >= len(args):
+        return None
+    return args[position]
+
 
 # A mode string carrying any of these opens the file for writing. `+` is in the
 # set because `r+` writes.
@@ -308,7 +346,13 @@ def install_guards(sandbox: Path) -> None:
             if not opens_for_writing(mode, flags):
                 return
         elif event in PATH_EVENTS:
-            path = args[0]
+            position, descriptor = PATH_EVENTS[event]
+            relative_to = argument(args, descriptor)
+            if isinstance(relative_to, int) and relative_to != AT_FDCWD:
+                # Relative to a directory this hook cannot name. Passed over
+                # rather than guessed at, and declared by the guard.
+                return
+            path = argument(args, position)
         else:
             return
         stray = outside_the_sandbox(path)
