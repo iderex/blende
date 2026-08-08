@@ -1,0 +1,81 @@
+# What this package is made of, and what an install of it pulls in.
+#
+# Issue #1 decides the language and the toolchain and says what the choice
+# costs. This file is the half of that decision a machine can read: the floor
+# the package claims, the one dependency it requires, and the absence of every
+# other one. `python -m blende` reads this back out of an install and prints
+# what the environment actually resolved, because a declaration in this file
+# and a working environment are different statements.
+
+[build-system]
+# Hatchling: a pure-Python backend that reads the metadata below directly, so
+# the floor and the dependency set are written once here rather than once here
+# and once in a setup script that can disagree with it. No compiled step, and
+# nothing in the build is security-deciding. The upper bound is a major-version
+# boundary rather than a pin; pinning the whole build input set is supply-chain
+# work and belongs to issue #91.
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blende"
+# A placeholder. What a version number promises about file formats, and the
+# changelog that goes with it, is issue #97, and no release has been made.
+version = "0.0.0"
+description = "Deterministic blinding for precision measurement: salted offsets, blinded axes, a committed analysis plan and a hash-chained record of decisions"
+readme = "README.md"
+
+# The floor, and it is a claim about who can install this rather than a
+# preference. Analysis environments in this field are old, because upgrading
+# one means re-validating a pipeline that produced published results, so the
+# floor goes as low as it can be held honestly.
+#
+# It stops at 3.11 rather than 3.10 for one reason: upstream security support
+# for 3.10 ends 2026-10-31, so a package declaring it today would be claiming
+# support for an unmaintained interpreter within months of saying so, and
+# raising a floor after artefacts exist is an install that stops working.
+#
+#     python -c "import json,urllib.request; \
+#       req=urllib.request.Request('https://endoflife.date/api/python.json', \
+#         headers={'User-Agent':'curl/8'}); \
+#       print([(r['cycle'], r['eol']) for r in json.load(urllib.request.urlopen(req))[:6]])"
+#     [('3.14', '2030-10-31'), ('3.13', '2029-10-31'), ('3.12', '2028-10-31'),
+#      ('3.11', '2027-10-31'), ('3.10', '2026-10-31'), ('3.9', '2025-10-31')]
+#
+# The floor also has to be one the required dependency still ships for. It is:
+# numpy 2.4.0 declares `>=3.11`, and only the 2.5 series moved to `>=3.12`.
+#
+#     python -c "import json,urllib.request; \
+#       d=json.load(urllib.request.urlopen('https://pypi.org/pypi/numpy/json')); \
+#       print(d['info']['version'], d['info']['requires_python'], \
+#             d['releases']['2.4.0'][0]['requires_python'])"
+#     2.5.1 >=3.12 >=3.11
+#
+# When this moves it moves here and in the check that builds against it, in one
+# change, which is issue #25.
+requires-python = ">=3.11"
+
+# The whole required runtime dependency set. Arrays are the data path and a
+# pure-Python transform over a million rows is not a real option, so numpy is
+# required rather than optional; it is already present in every environment this
+# package targets. Nothing else belongs here. In particular the key derivation,
+# the commitment and the hash chain are written against `hashlib` and `hmac`
+# from the standard library, because a third-party cryptographic dependency
+# would be a supply-chain surface on the one part of this package whose failure
+# is silent.
+dependencies = ["numpy"]
+
+# No plotting library is declared anywhere in this repository yet, so there is
+# no optional-dependencies table to show. That is the state rather than a
+# guarantee about the future: a plotting backend arrives with the figure
+# adapter in milestone 7, and when it does it arrives as an extra here and
+# never in `dependencies` above, so that a batch job writing blinded numbers on
+# a compute node does not have to install a plotting stack. `python -m blende`
+# reports extras when an install has them, and the suite covers that path with
+# a synthetic distribution rather than waiting for a real one.
+
+[tool.hatch.build.targets.wheel]
+# Stated rather than inferred. A src layout that the backend has to guess at is
+# how a module ends up missing from a built distribution while every test run
+# from the checkout passes.
+packages = ["src/blende"]
