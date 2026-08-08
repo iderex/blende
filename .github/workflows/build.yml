@@ -1,0 +1,142 @@
+# The check that installs what an operator installs.
+#
+# The ordinary failure of a scientific Python package is that it works from a
+# checkout and breaks from an install: a module left out of the distribution, a
+# data file that never reached the wheel, a src layout the backend guessed at
+# differently than the developer did. Every test in this repository runs
+# against the source tree, so none of them can see that class of defect. This
+# job builds the distribution, installs it into an environment that has never
+# seen this checkout, and imports every module from there.
+#
+# It runs on the floor rather than on whatever the runner ships. Issue #1 pins
+# an oldest supported interpreter and the metadata is the only place that says
+# what it is; building anywhere else leaves the floor a claim. The version is
+# read out of `pyproject.toml` here rather than written into this file twice.
+#
+# Warnings are errors during both the build and the import. In a package whose
+# job is to produce a number nobody can check by eye, an interpreter
+# observation is the cheapest review available: a deprecated hashing call, an
+# import resolving to a shadowed module, a reader leaving a file open. All
+# three are import-time observations and all three are silent by default.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job builds and installs into the runner and never writes here.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        run: |
+          set -euo pipefail
+          # The runner's own interpreter reads the file; the floor it prints is
+          # what the next step installs. `tomllib` is standard library, so this
+          # step adds nothing to the environment.
+          floor=$(python3 - <<'PY'
+          import re
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as handle:
+              declared = tomllib.load(handle)["project"].get("requires-python", "")
+
+          match = re.fullmatch(r">=\s*(\d+\.\d+)", declared.strip())
+          if match is None:
+              # Fail closed. A floor this step cannot read is a floor nothing
+              # builds against, and defaulting to the runner's interpreter here
+              # would build above the floor while reporting that it built on it.
+              sys.exit(
+                  f"requires-python is {declared!r}. This job installs one "
+                  "interpreter, so it reads a simple lower bound and refuses "
+                  "anything else rather than guessing which version to use."
+              )
+          print(match.group(1))
+          PY
+          )
+          echo "Declared floor: $floor"
+          echo "version=$floor" >> "$GITHUB_OUTPUT"
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Build the distribution
+        run: |
+          set -euo pipefail
+          # Installing the build front end is not covered by the rule below.
+          # Warnings from pip are about pip, and a gate that reddens on them
+          # tells a contributor nothing about the change they sent.
+          python -m pip install --quiet --upgrade build
+          # PYTHONWARNINGS reaches the isolated build environment as well, so a
+          # warning raised while the backend runs reds the job too.
+          PYTHONWARNINGS=error python -m build --outdir dist
+
+      - name: Install the built distribution into a fresh environment
+        run: |
+          set -euo pipefail
+          wheel=$(ls dist/*.whl)
+          python -m venv "$RUNNER_TEMP/fresh"
+          "$RUNNER_TEMP/fresh/bin/python" -m pip install --quiet "$wheel"
+
+      - name: Import every module from the install
+        run: |
+          set -euo pipefail
+          # Run from outside the checkout. Importing from the repository root
+          # would put `src` nowhere near `sys.path` but would still find any
+          # stray top-level module, and this step exists to read the install.
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/fresh/bin/python" -W error - <<'PY'
+          import importlib
+          import pkgutil
+          import sys
+          import warnings
+
+          warnings.simplefilter("error")
+
+          import blende
+
+          print("blende imported from", blende.__file__)
+
+          modules = [
+              found.name
+              for found in pkgutil.walk_packages(blende.__path__, blende.__name__ + ".")
+          ]
+
+          # Fail closed. An empty walk means the distribution carried the
+          # package directory and none of its modules, which is exactly the
+          # packaging defect this job is for, and reporting it as "nothing
+          # failed to import" would pass the job on it.
+          if not modules:
+              sys.exit(
+                  "The installed distribution carries no submodule of blende. "
+                  "Either the wheel was built without them or the walk broke; "
+                  "both are refused here rather than read as a clean import."
+              )
+
+          for name in modules:
+              importlib.import_module(name)
+              print("imported", name)
+          PY
