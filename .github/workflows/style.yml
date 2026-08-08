@@ -1,0 +1,184 @@
+# The two style gates, `fmt` and `lint`.
+#
+# They are two checks and not one, because they fail for different reasons and
+# a reader of a red pull request should be able to tell whitespace from a
+# defect without opening the log. They share this file for a single reason:
+# the version of the tool is pinned once here, and a pin written twice is a
+# pin that drifts, so one file keeps `fmt` and `lint` on the same build of the
+# same tool. The rules themselves are not here. They are in `ruff.toml`, which
+# is tracked, so a contributor running the tool locally gets the answer this
+# job gets and a rule change arrives as a diff.
+#
+# `lint` carries a second step that is the reason the gate is worth anything.
+# A rule that is enabled and has never been shown to bite is a line in a
+# configuration file, so every enabled rule has a sample under
+# `tests/lint-regressions` that trips it, and the step refuses any difference
+# between the set of enabled rules and the set of rules the samples actually
+# trip. A rule added without a sample reds this job, and so does a sample that
+# has stopped firing because the rule was renamed or its default changed.
+#
+# Pinning the whole development tool set, with a lock and an advisory gate
+# over it, is issue #26 and is not this. The single pin below is what this
+# gate needs to be reproducible today.
+name: style
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: both jobs read the tracked tree and write nothing back.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref. Both jobs are cheap and idempotent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # One pin for both jobs. A formatter that moves under a repository reformats
+  # files inside a pull request about something else, and a linter that moves
+  # under it turns an unrelated change red.
+  RUFF_VERSION: "0.16.2"
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        uses: ./.github/actions/declared-floor
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Install the pinned formatter
+        run: |
+          set -euo pipefail
+          # The interpreter here is not deciding anything. The tool reads the
+          # syntax level it targets out of `requires-python` in the package
+          # metadata rather than out of the interpreter running it, and the
+          # floor action is used anyway so that no workflow in this tree picks
+          # an interpreter version out of the air.
+          python -m pip install --quiet "ruff==${RUFF_VERSION}"
+          ruff --version
+
+      - name: The tracked tree is already formatted
+        run: |
+          set -euo pipefail
+          # --diff so a red run says what it wanted rather than only that it
+          # wanted something.
+          ruff format --check --diff .
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        uses: ./.github/actions/declared-floor
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Install the pinned linter
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet "ruff==${RUFF_VERSION}"
+          ruff --version
+
+      - name: The tracked tree trips no enabled rule
+        run: |
+          set -euo pipefail
+          # The samples are excluded from the walk in `ruff.toml`, so this pass
+          # reads the package and the suite. The next step reads the samples by
+          # naming them, which an exclusion does not stop.
+          ruff check --output-format github .
+
+      - name: Every enabled rule has a sample that trips it
+        run: |
+          set -euo pipefail
+          # A finding is the expected outcome here, so exit 1 is success and
+          # anything above it is a tool that could not read the samples. Fail
+          # closed on the second case rather than reading a scanner error as an
+          # empty set of findings.
+          rc=0
+          ruff check --output-format json tests/lint-regressions \
+            > "$RUNNER_TEMP/found.json" || rc=$?
+          if [ "$rc" -gt 1 ]; then
+            echo "::error::ruff exited $rc while reading the samples. Refusing to report a proved rule set from a run that did not complete."
+            exit 1
+          fi
+
+          python - "$RUNNER_TEMP/found.json" <<'PY'
+          import json
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          with open("ruff.toml", "rb") as handle:
+              enabled = set(tomllib.load(handle)["lint"]["select"])
+
+          # Fail closed. An empty selection would make every comparison below
+          # trivially true and report a proof over nothing.
+          if not enabled:
+              sys.exit(
+                  "ruff.toml selects no rule. Refusing to report that every "
+                  "enabled rule is proved when none is enabled."
+              )
+
+          found = {
+              finding["code"]
+              for finding in json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          }
+
+          unproved = sorted(enabled - found)
+          if unproved:
+              print(
+                  "::error::These rules are enabled and no sample under "
+                  "tests/lint-regressions trips them: " + ", ".join(unproved) + ". "
+                  "A rule that has never been shown to bite is a line in a "
+                  "configuration file. Add a sample in the same change that "
+                  "enables the rule."
+              )
+
+          # The other direction. A sample tripping a rule the configuration
+          # does not enable means the two have drifted apart, and the sample is
+          # then proving something the gate does not run.
+          unselected = sorted(found - enabled)
+          if unselected:
+              print(
+                  "::error::These rules fire on the samples and are not in the "
+                  "selection in ruff.toml: " + ", ".join(unselected) + "."
+              )
+
+          if unproved or unselected:
+              sys.exit(1)
+
+          print(f"{len(enabled)} enabled rule(s), each tripped by a sample:")
+          for code in sorted(enabled):
+              print(f"  {code}")
+          PY
