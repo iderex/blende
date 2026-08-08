@@ -10,8 +10,9 @@
 #
 # It runs on the floor rather than on whatever the runner ships. Issue #1 pins
 # an oldest supported interpreter and the metadata is the only place that says
-# what it is; building anywhere else leaves the floor a claim. The version is
-# read out of `pyproject.toml` here rather than written into this file twice.
+# what it is; building anywhere else leaves the floor a claim. The version comes
+# from `.github/actions/declared-floor`, which every job needing it uses, so the
+# reading of the metadata is one thing and not one per workflow.
 #
 # Warnings are errors during both the build and the import. In a package whose
 # job is to produce a number nobody can check by eye, an interpreter
@@ -49,34 +50,7 @@ jobs:
 
       - name: Read the declared floor out of the package metadata
         id: floor
-        run: |
-          set -euo pipefail
-          # The runner's own interpreter reads the file; the floor it prints is
-          # what the next step installs. `tomllib` is standard library, so this
-          # step adds nothing to the environment.
-          floor=$(python3 - <<'PY'
-          import re
-          import sys
-          import tomllib
-
-          with open("pyproject.toml", "rb") as handle:
-              declared = tomllib.load(handle)["project"].get("requires-python", "")
-
-          match = re.fullmatch(r">=\s*(\d+\.\d+)", declared.strip())
-          if match is None:
-              # Fail closed. A floor this step cannot read is a floor nothing
-              # builds against, and defaulting to the runner's interpreter here
-              # would build above the floor while reporting that it built on it.
-              sys.exit(
-                  f"requires-python is {declared!r}. This job installs one "
-                  "interpreter, so it reads a simple lower bound and refuses "
-                  "anything else rather than guessing which version to use."
-              )
-          print(match.group(1))
-          PY
-          )
-          echo "Declared floor: $floor"
-          echo "version=$floor" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/declared-floor
 
       - name: Install the declared floor interpreter
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

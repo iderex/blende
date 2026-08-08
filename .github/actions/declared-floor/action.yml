@@ -1,0 +1,51 @@
+# The one place a job learns which interpreter the package claims as its floor.
+#
+# Two checks install that interpreter now and more will. Written into each
+# workflow separately, the number would be one place and the reading of it
+# would be several, and a reader that drifts is the same defect as a number
+# that drifts: it is discovered when a job builds somewhere the metadata never
+# claimed.
+#
+# `pyproject.toml` stays the authority. This action does not hold the version,
+# it reads it, and a floor it cannot read as a simple lower bound is refused
+# rather than defaulted to whatever the runner ships, because building above
+# the floor while reporting that you built on it is the failure the checks
+# using this exist to prevent.
+name: Declared floor
+description: Read the oldest supported interpreter out of this package's metadata.
+
+outputs:
+  version:
+    description: The floor as a bare version, for example 3.11.
+    value: ${{ steps.read.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: read
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The runner's own interpreter reads the file. `tomllib` is standard
+        # library, so this step installs nothing and runs before any interpreter
+        # has been chosen.
+        floor=$(python3 - <<'PY'
+        import re
+        import sys
+        import tomllib
+
+        with open("pyproject.toml", "rb") as handle:
+            declared = tomllib.load(handle)["project"].get("requires-python", "")
+
+        match = re.fullmatch(r">=\s*(\d+\.\d+)", declared.strip())
+        if match is None:
+            sys.exit(
+                f"requires-python is {declared!r}. A job reading this installs "
+                "one interpreter, so it reads a simple lower bound and refuses "
+                "anything else rather than guessing which version to use."
+            )
+        print(match.group(1))
+        PY
+        )
+        echo "Declared floor: $floor"
+        echo "version=$floor" >> "$GITHUB_OUTPUT"
