@@ -1,0 +1,158 @@
+# The check that makes `.gitattributes` a rule instead of a hope.
+#
+# This repository will hold fixture files whose exact bytes are the point: a
+# commitment is a digest over bytes, a chain entry is a digest over bytes, and a
+# vector file exists to say that a given input produces a given output. A
+# normalising checkout that adds or removes a carriage return changes those
+# digests on one operating system only, and the failure arrives as a test that
+# passes for some contributors and fails for others.
+#
+# `.gitattributes` declares `tests/fixtures/**` binary so nothing touches it.
+# That declaration is a file in the tree and nothing reads it back, so this job
+# reads it back. It runs on a fresh clone, which is the checkout every other
+# contributor gets, and it refuses three things:
+#
+#   1. a fixture whose bytes differ from the digest recorded for it, a fixture
+#      with no recorded digest, or a recorded digest with no fixture;
+#   2. a file under the fixture directory that the declaration does not
+#      actually reach, read through `git check-attr` rather than by
+#      re-implementing git's matching rules here;
+#   3. a fixture that lives outside the declared directory, which is the
+#      realistic mistake - the declaration is a path rule, so a fixture put
+#      somewhere else is normalised in silence and nothing else notices.
+#
+# First-party and shell, deliberately. The two guards already in this tree are
+# first-party shell steps, no interpreter is installed to run this one, and the
+# whole check is git plumbing plus `sha256sum`, so any other means would add a
+# runtime to a job whose entire subject is what git does to bytes on checkout.
+name: exact-bytes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job reads the tracked tree and computes digests, it never
+# writes.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref; the check is cheap and idempotent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    name: Verify fixture bytes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Fixture bytes, the declaration, and where a fixture may live
+        run: |
+          set -euo pipefail
+          dir=tests/fixtures
+          manifest="$dir/SHA256SUMS"
+          fail=0
+
+          if [ ! -e "$manifest" ]; then
+            echo "::error::$manifest is missing. Every fixture carries a recorded digest."
+            exit 1
+          fi
+
+          # One pass over the tracked tree. git decides both what is tracked and
+          # which attributes reach each path, so nothing here re-implements
+          # either. NUL-separated throughout, because a path may contain a space
+          # and an attribute value may not be guessed from a filename.
+          declare -A attr=()
+          tracked=()
+          while IFS= read -r -d '' p && IFS= read -r -d '' _name && IFS= read -r -d '' v; do
+            tracked+=("$p")
+            attr["$p"]="$v"
+          done < <(git ls-files -z | git check-attr -z --stdin text)
+
+          # Fail closed. An empty list here means the walk broke, and a broken
+          # walk that reports a clean tree is the failure this job exists to
+          # prevent.
+          if [ "${#tracked[@]}" -eq 0 ]; then
+            echo "::error::No tracked path was listed. Refusing to report a clean tree from a walk that returned nothing."
+            exit 1
+          fi
+
+          fixtures=()
+          for p in "${tracked[@]}"; do
+            case "$p" in
+              "$manifest") continue ;;
+              "$dir"/*) fixtures+=("$p") ;;
+            esac
+          done
+
+          # --- 1. every fixture carries a digest, and the bytes still match ---
+
+          # `HASH  path` and `HASH *path` are both what sha256sum writes - the
+          # second is what it writes where binary mode is the default - and
+          # `sha256sum -c` reads either, so the manifest is read here in both of
+          # its spellings rather than in one.
+          listed=$(sed -n 's/^[0-9a-f]\{64\} [ *]//p' "$manifest" | LC_ALL=C sort)
+          present=""
+          if [ "${#fixtures[@]}" -gt 0 ]; then
+            present=$(printf '%s\n' "${fixtures[@]}" | LC_ALL=C sort)
+          fi
+          if [ "$listed" != "$present" ]; then
+            echo "::error::$manifest does not describe exactly the tracked fixtures. Regenerate it: sha256sum \$(git ls-files -- $dir | grep -v SHA256SUMS) > $manifest"
+            diff <(printf '%s\n' "$listed") <(printf '%s\n' "$present") || true
+            fail=1
+          fi
+
+          if [ "${#fixtures[@]}" -gt 0 ]; then
+            # --strict so a malformed manifest line is an error rather than a
+            # line quietly skipped, which would verify nothing and pass.
+            if ! sha256sum -c --strict "$manifest"; then
+              echo "::error::Fixture bytes differ from their recorded digests. If the bytes were not edited on purpose, the declaration in .gitattributes did not reach this file and the checkout normalised it."
+              fail=1
+            fi
+          fi
+
+          # --- 2. the declaration reaches every fixture ---
+
+          for p in "${fixtures[@]-}"; do
+            [ -n "$p" ] || continue
+            if [ "${attr["$p"]}" != "unset" ]; then
+              echo "::error::$p lives under $dir but its text attribute is '${attr["$p"]}' rather than unset, so a checkout may rewrite its line endings. Look at the .gitattributes lines that match it."
+              fail=1
+            fi
+          done
+
+          if [ "${attr["$manifest"]}" = "unset" ]; then
+            echo "::error::$manifest is declared binary. It is an ordinary text file read line by line, and a manifest whose own line endings vary does not verify the same way on every platform."
+            fail=1
+          fi
+
+          # --- 3. a fixture may only live under the declared directory ---
+
+          for p in "${tracked[@]}"; do
+            case "$p" in "$dir"/*) continue ;; esac
+            case "$p" in
+              *[Ff]ixture*|*FIXTURE*)
+                echo "::error::$p names a fixture and lives outside $dir. The binary declaration is a path rule, so nothing protects the bytes of a fixture kept anywhere else."
+                fail=1
+                ;;
+            esac
+            if [ "${attr["$p"]}" = "unset" ]; then
+              echo "::error::$p is declared binary outside $dir. Exact bytes belong under $dir, where a recorded digest proves them."
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Fixture digests, the binary declaration and the fixture location all hold."
