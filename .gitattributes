@@ -1,0 +1,29 @@
+# Text attributes for this repository, settled before the first fixture lands.
+#
+# Why the file exists at all. A commitment is a digest over bytes, a chain entry
+# is a digest over bytes, and a vector file exists to say that a given input
+# produces a given output. If a checkout adds or removes a carriage return, the
+# digest changes on one operating system only, and the failure arrives as a test
+# that passes for some contributors and fails for others, with nothing in the
+# diff to point at.
+
+# Everything git decides is text is stored with LF and checked out with LF, on
+# every platform. Without eol=lf a checkout on Windows writes CRLF into the
+# working tree, so a test that reads a tracked file back byte for byte
+# disagrees with the same test on Linux while both trees are identical in git.
+* text=auto eol=lf
+
+# Fixtures exist to carry exact bytes, so nothing may touch them. `binary` is
+# git's own macro for `-text -diff -merge`: no end-of-line conversion in either
+# direction, no textual diff, no line-level merge. The declaration is a rule on
+# the path rather than a list of names somebody maintains, so a fixture added
+# under this directory is covered without anybody remembering to declare it,
+# and a fixture added anywhere else is not covered at all - which is what the
+# `Verify fixture bytes` check refuses.
+tests/fixtures/** binary
+
+# The digest manifest sits inside the fixture directory because it describes
+# it, but it is an ordinary text file rather than a fixture: it is regenerated,
+# read line by line, and reviewed in a diff. The last matching line wins, so
+# this one takes it back out of the rule above.
+tests/fixtures/SHA256SUMS text eol=lf
