@@ -292,6 +292,50 @@ class CanonicalBytesTest(unittest.TestCase):
             CONTRACT.encode("utf-8"), DeclarationSet((MASS,)).canonical_bytes()
         )
 
+    def test_the_reason_is_prose_and_the_name_is_not(self):
+        # The two text fields of a declaration are encoded by different rules
+        # and the module says so. The name is normalised, so two spellings of
+        # it are one parameter, which is the case above. The reason is the
+        # operator's own prose and enters the digest as its exact bytes, which
+        # is issue #46's rule for prose under a commitment: changing a
+        # document's bytes is what a commitment exists to detect, so a
+        # normaliser here would let the text be edited without the digest
+        # moving.
+        #
+        # Both spellings are written as escapes so this file stays ASCII and
+        # the difference is visible in the source instead of two
+        # identical-looking lines a reader has to trust.
+        composed = "gemessene Gr\u00f6\u00dfe, extern kalibriert"
+        decomposed = "gemessene Gro\u0308\u00dfe, extern kalibriert"
+        self.assertNotEqual(composed.encode("utf-8"), decomposed.encode("utf-8"))
+
+        def counted(reason):
+            return DeclarationSet(
+                (
+                    Declaration(
+                        name="records-processed",
+                        kind=Kind.COUNT,
+                        low=0.0,
+                        high=1e9,
+                        transform=Transform.NONE,
+                        blinded=False,
+                        reason=reason,
+                    ),
+                )
+            ).digest()
+
+        self.assertNotEqual(counted(composed), counted(decomposed))
+
+        # The same pair of spellings in the name field is one digest, so what
+        # is above is a difference between the two fields rather than a
+        # property of the pair.
+        def named(name):
+            return DeclarationSet(
+                (Declaration(name, Kind.LOCATION, 1.0, 2.0, Transform.OFFSET, True),)
+            ).digest()
+
+        self.assertEqual(named("m\u00fc"), named("mu\u0308"))
+
     def test_the_framing_is_what_makes_the_encoding_injective(self):
         # Two field lists whose plain concatenation is one byte string. The
         # length prefix is the only thing separating them, so this is the case
