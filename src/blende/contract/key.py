@@ -59,9 +59,19 @@ and the drawn key can. The fingerprint inherits the entropy of the key and adds
 none, and it is written here in those words because it is the one derived value
 this project puts into published artefacts on purpose.
 
-The construction is keyed by the material with the context as the message. The
-other way round would make the fingerprint a function of a public constant
-under a public key, which is a constant.
+The construction is keyed by the published context with the material as the
+message, and that direction is load-bearing rather than a spelling. A keyed
+digest replaces a key longer than its block size with the digest of that key,
+so keying by the material collapses a long key and its own digest onto one
+value. Both of those are accepted material here, both are legal keys, and two
+artefacts naming that one fingerprint would be saying they used one key when
+they used two. With the material as the message it is the digest that has to
+collide before two keys share a fingerprint.
+
+Keying by the context does not make the fingerprint a function of a constant.
+The message is the secret, so the value moves with the key, and the fixed
+context still buys what it was there for: a fingerprint computed under this
+context can only be compared with another computed under it.
 """
 
 from __future__ import annotations
@@ -76,12 +86,22 @@ from .refusal import Refusal
 
 # The identifier this material and its fingerprint are produced under. A change
 # to any of the constants below is a change to it, under issue #2.
-CONTRACT = "blende/blinding-key/1"
+#
+# It reads 2 rather than 1 because the fingerprint's two arguments changed
+# places, which changes every value the construction produces. Issue #2 makes
+# that a new identifier without asking whether anybody has read the old one,
+# and applying the rule while no artefact carries either is what keeps it from
+# being argued about on the day one does.
+CONTRACT = "blende/blinding-key/2"
 
 # Published, fixed and not secret. An outside reader recomputing a fingerprint
 # from a candidate needs it, and issue #47's nonce is the opposite case: secret,
 # and inside the committed bytes rather than beside them.
-FINGERPRINT_CONTEXT = "blende/key-fingerprint/1"
+#
+# It moves with the identifier above, so a reader who computes under the old
+# context and the old positions cannot land on a value this package would
+# produce.
+FINGERPRINT_CONTEXT = "blende/key-fingerprint/2"
 
 # The digest primitive. Issue #46 fixes one primitive across the derivation,
 # the commitment and the chain, and names it in the specification document; this
@@ -137,7 +157,7 @@ class BlindingKey:
     def fingerprint(self) -> str:
         """The value that goes into an artefact in place of the key."""
         return hmac.new(
-            self._material, FINGERPRINT_CONTEXT.encode("utf-8"), DIGEST
+            FINGERPRINT_CONTEXT.encode("utf-8"), self._material, DIGEST
         ).hexdigest()
 
     def __repr__(self) -> str:
