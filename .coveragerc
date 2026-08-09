@@ -1,0 +1,88 @@
+# What the `coverage` gate measures, and the surface it holds a threshold on.
+#
+# Issue #27 asks for a check that measures line and branch coverage of the
+# default suite and fails below a threshold on a named surface rather than on
+# the whole package. The reason is the direction the failure comes from: a
+# global number is diluted by whatever is easiest to cover, so a regression on
+# a path that decides a blinding outcome can hide behind a well covered
+# convenience layer and the number still goes up.
+#
+# This file is that named surface. It is tracked, and the threshold is applied
+# by `coverage report` reading it rather than by a number typed into a job, so
+# the list and the gate cannot drift apart. `.github/workflows/coverage.yml`
+# refuses a module under `src/blende/` that this file neither includes nor
+# names as off the surface, which makes a new module a red gate until somebody
+# says which of the two it is.
+#
+# Branch coverage rather than line coverage. Every refusal in this package is a
+# branch, and a suite that calls a function without ever giving it the input it
+# refuses reaches every line of the guard except the one that matters. Under a
+# line count that file reports as covered.
+
+[run]
+# The package. Not the suite and not `tools/`, because the question this gate
+# answers is which package code the suite reached.
+source = src/blende
+branch = True
+
+[report]
+precision = 2
+show_missing = True
+
+# The named surface: the part of the package that decides a blinding outcome.
+# Issue #27 names six, and one of them is in the tree today. The contract
+# package is the derivation's canonical encoding, the parameter declarations
+# and their digest, the blinding key and its fingerprint, and the refusal type
+# every guard in it raises.
+#
+# The other five are named here so that a reader knows the list is short
+# because the code is, and not because somebody decided a path was not worth
+# gating. The derivation is issue #40, the commitment is #46 and #48, the chain
+# is #54, the region split is #61, and the artefact readers and writers are #11
+# with the formats in milestones 04 and 05. Each arrives on this list in the
+# change that adds it, and the check in the coverage job is what stops one
+# arriving quietly beside it.
+include =
+    src/blende/contract/*
+
+# Where the surface stands, rather than where it should eventually stand. The
+# number is the one the command below printed at the commit this landed on, so
+# a change that lowers it is red and raising it is its own change with its own
+# tests behind it:
+#
+#     coverage run tools/default_suite.py
+#     coverage report
+#     TOTAL  147  2  36  2  97.81%
+#
+# The two branches not taken are both refusals, which is worth naming rather
+# than rounding away. `canonical_double` refuses a NaN and no case in the suite
+# hands it one, and `admissible_transforms` refuses a kind outside the closed
+# set, which a caller cannot reach while the enum and the table agree. They
+# belong to issues #2 and #36, whose modules those are.
+fail_under = 97.81
+
+[blende]
+# Modules under `src/blende/` that are deliberately off the named surface, each
+# with its reason below. This is not an exclusion from the whole-package
+# number, which the job reports over everything; it is the statement that a
+# regression here does not decide whether a value was blinded.
+#
+# `__init__.py` exports nothing and exists so the package imports.
+# `__main__.py` is the entry point for the environment report and holds one
+# call. `environment.py` reads what an install resolved to out of the installed
+# metadata; it never sees a measured value, and its own refusals are covered by
+# `tests/test_environment.py` at whatever level that suite reaches rather than
+# by a threshold here.
+#
+# A path here that does not exist is refused by the coverage job, so a module
+# that was deleted or renamed cannot leave a permission behind it.
+not_surface =
+    src/blende/__init__.py
+    src/blende/__main__.py
+    src/blende/environment.py
+
+[html]
+directory = coverage-report/html
+
+[xml]
+output = coverage-report/coverage.xml
