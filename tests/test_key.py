@@ -16,6 +16,7 @@ what the package renders rather than on what it holds.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import os
 import subprocess
@@ -43,6 +44,11 @@ from blende.contract.refusal import Refusal  # noqa: E402
 # phrase a person would type is exactly the case the module says it cannot
 # judge, and this file is not the place that claim gets weakened.
 PHRASE = "a-long-enough-string-of-text"
+
+# Above the block size of the digest, which is where a keyed construction
+# starts hashing its key. Sixty-six characters of ASCII, so the count is the
+# same whether it is read as text or as the bytes it encodes to.
+LONG_PHRASE = "a-string-of-text-long-enough-that-a-keyed-digest-hashes-it-first-x"
 
 PROGRAM = """
 from blende.contract.key import from_text
@@ -140,14 +146,28 @@ class GeneratorTest(unittest.TestCase):
 
 class FingerprintTest(unittest.TestCase):
     def test_it_is_a_keyed_digest_under_the_published_context(self):
-        # Recomputed here by an outside reader would be: the context is
-        # published, the construction is keyed by the material, and the
-        # message is the context. Written out so a reader can check the
-        # positions rather than trust them.
+        # What an outside reader recomputes: the context is published and is
+        # the key, and the material is the message. Written out so a reader
+        # can check the positions rather than trust them, because the
+        # positions are what the case below is about.
         expected = hmac.new(
-            PHRASE.encode("utf-8"), FINGERPRINT_CONTEXT.encode("utf-8"), "sha256"
+            FINGERPRINT_CONTEXT.encode("utf-8"), PHRASE.encode("utf-8"), "sha256"
         ).hexdigest()
         self.assertEqual(expected, from_text(PHRASE).fingerprint())
+
+    def test_material_longer_than_the_block_size_is_not_its_own_digest(self):
+        # The near miss, and it is one line of the module rather than a
+        # constructed case. A keyed digest hashes a key longer than its block
+        # size before using it, so with the material in the key position this
+        # pair carries one fingerprint. Both members are accepted material,
+        # both are keys somebody can hold, and their artefacts would say they
+        # used the same one.
+        material = LONG_PHRASE.encode("utf-8")
+        self.assertGreater(len(material), hashlib.sha256().block_size)
+        self.assertNotEqual(
+            from_bytes(material).fingerprint(),
+            from_bytes(hashlib.sha256(material).digest()).fingerprint(),
+        )
 
     def test_it_carries_no_part_of_the_material(self):
         self.assertNotIn(PHRASE, from_text(PHRASE).fingerprint())
