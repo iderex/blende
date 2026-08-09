@@ -1,0 +1,102 @@
+# The advisory and license policy gate.
+#
+# Issue #26 asks for a check named `deny` that fails on a known vulnerability
+# in any resolved dependency and on a dependency whose license falls outside a
+# declared allow list, over a set that is locked rather than a range. The
+# policy, the allow list, what each refusal reaches and what it does not are in
+# `tools/dependency_policy.py`, not here, because a workflow file that carries
+# policy is a workflow file nobody reviews policy in.
+#
+# Three steps, and the order is the argument.
+#
+# The locks install first, with `--require-hashes`. That is the half of "a
+# drifted lock fails the build" no reading of a file can give: pip refuses an
+# artefact whose bytes are not one of the digests the lock names, so a
+# distribution replaced upstream under a version already published reds this
+# job with nothing in the diff to have caught it. It also proves the lock is
+# installable rather than merely well-formed.
+#
+# The proof runs second, because a green policy run is only worth reading once
+# the refusals behind it are known to bite. Every refusal has a scenario under
+# `tests/policy-regressions/` written to trip it and nothing else.
+#
+# The policy runs last, over the tracked locks.
+#
+# `dependency-review` is a different check and neither replaces the other. It
+# reads the diff of a pull request against the advisory database, so it sees a
+# dependency being introduced or upgraded and sees nothing on a branch that
+# changes no dependency. This reads the whole locked set on every run, which is
+# what catches an advisory published after the dependency landed.
+name: deny
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job reads the tracked tree, asks two services about it, and
+# writes nothing back.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref. The job is idempotent, and its cost
+# is two service calls per locked distribution.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deny:
+    name: deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        uses: ./.github/actions/declared-floor
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Say which interpreter the rest of this job used
+        run: |
+          set -euo pipefail
+          # Printed rather than assumed. Both locks are resolved on the
+          # declared floor, so a job that installed a different interpreter
+          # would be installing a set the locks are not about.
+          python -c 'import platform; print(platform.python_implementation(), platform.python_version())'
+
+      - name: Both locks install, and only the bytes they name
+        run: |
+          set -euo pipefail
+          # A fresh environment per lock. The two sets are installed by
+          # different jobs for different reasons and are not required to be
+          # co-installable, so resolving them together here would invent a
+          # constraint no gate has.
+          for lock in requirements/*.lock; do
+            echo "::group::$lock"
+            python -m venv "$RUNNER_TEMP/$(basename "$lock" .lock)"
+            "$RUNNER_TEMP/$(basename "$lock" .lock)/bin/python" -m pip install \
+              --quiet --require-hashes --no-deps --requirement "$lock"
+            echo "::endgroup::"
+          done
+
+      - name: Every refusal has a scenario that trips it
+        run: |
+          set -euo pipefail
+          python tools/dependency_policy.py --prove
+
+      - name: The locked set carries no advisory and no refused license
+        run: |
+          set -euo pipefail
+          python tools/dependency_policy.py

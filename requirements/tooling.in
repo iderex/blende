@@ -1,0 +1,20 @@
+# The development tool set, as requirements, before resolution.
+#
+# The runtime set is not here. It is `[project].dependencies` in
+# `pyproject.toml`, which is the authority for what an install of this package
+# pulls in, and a second copy of it here would be a copy that drifts.
+# `tools/dependency_policy.py` reads the two from their two places and locks
+# them separately, because they are installed by different jobs for different
+# reasons.
+#
+# A tool is written here at the version the gate that runs it installs. The
+# same version is written in that gate's own workflow, which is the one place
+# a reader of the job sees it, and the two being written twice is exactly the
+# drift the `deny` check refuses: a pinned version a workflow installs and no
+# lock carries is a tool this check never judged.
+#
+#     python tools/dependency_policy.py
+
+# The formatter and the linter, one build of one tool, pinned in
+# `.github/workflows/style.yml` where both `fmt` and `lint` read it.
+ruff==0.16.2
