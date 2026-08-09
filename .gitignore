@@ -14,3 +14,10 @@ dist/
 # Virtual environments, wherever somebody puts one while working in this tree.
 .venv/
 venv/
+
+# What the coverage measurement leaves behind. The data file is a database
+# written by the run and the report is generated from it, so both are outputs
+# of a command rather than anything anybody wrote.
+.coverage
+.coverage.*
+coverage-report/

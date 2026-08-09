@@ -1,0 +1,213 @@
+# The coverage gate, `coverage`.
+#
+# Issue #27 asks for a check that measures line and branch coverage of the
+# default suite, gates on a threshold over a named surface rather than over the
+# whole package, reports the whole-package number without gating it, and keeps
+# the report reachable when the gate is red, which is the moment somebody wants
+# to read it.
+#
+# The surface is not here. It is `.coveragerc`, which is tracked, carries the
+# reason for every entry, and is what `coverage report` reads, so the list a
+# contributor edits is the list the threshold is applied to. A number typed
+# into this file beside a list kept somewhere else is two statements that can
+# disagree, and the one a reader checks is not the one the gate uses.
+#
+# This job runs the default suite a second time rather than making `test`
+# depend on a measurement tool. `test` answers whether the suite passes on a
+# bare interpreter, and an install in front of it would end that. The suite is
+# run through `tools/default_suite.py` here as well, so the guards a test meets
+# under `test` are the guards it meets under measurement, and the number is not
+# taken from some other way of running the same files.
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+
+# Read-only: the job reads the tracked tree and writes nothing back. The report
+# it uploads is an artefact of the run rather than a commit.
+permissions:
+  contents: read
+
+# Cancel a superseded run on the same ref. The suite is cheap and idempotent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The pin, written here because this is the job that installs it, and locked
+  # in `requirements/tooling.lock`. The `deny` check reads this spelling and
+  # refuses a version no lock carries, so the two cannot drift apart.
+  COVERAGE_VERSION: "7.15.4"
+
+jobs:
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No step pushes, so do not persist the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
+
+      - name: Read the declared floor out of the package metadata
+        id: floor
+        uses: ./.github/actions/declared-floor
+
+      - name: Install the declared floor interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.floor.outputs.version }}
+
+      - name: Install the pinned measurement tool
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet "coverage==${COVERAGE_VERSION}"
+          coverage --version
+
+      - name: Every module in the package is on the surface or off it by name
+        run: |
+          set -euo pipefail
+          # The step that stops the surface list going quietly out of date. A
+          # module added under `src/blende/` is either on the named surface or
+          # named as off it with a reason, and anything else is red here rather
+          # than silently outside the threshold. It reads `.coveragerc` so the
+          # question is asked of the same file the threshold comes from.
+          python - <<'PY'
+          import configparser
+          import fnmatch
+          import subprocess
+          import sys
+          from pathlib import PurePosixPath
+
+          config = configparser.ConfigParser()
+          if not config.read(".coveragerc"):
+              sys.exit(".coveragerc is not readable. The named surface is that file.")
+
+          def entries(section, option):
+              raw = config.get(section, option, fallback="")
+              return [line.strip() for line in raw.splitlines() if line.strip()]
+
+          surface = entries("report", "include")
+          off_the_surface = entries("blende", "not_surface")
+
+          # Fail closed. An empty surface would make every comparison below
+          # trivially true and gate a threshold over nothing.
+          if not surface:
+              sys.exit(
+                  "[report] include in .coveragerc names no path. Refusing to "
+                  "report a held threshold over an empty surface."
+              )
+
+          tracked = subprocess.run(
+              ["git", "ls-files", "src/blende"],
+              capture_output=True,
+              text=True,
+              check=True,
+          ).stdout.split()
+          modules = [path for path in tracked if PurePosixPath(path).suffix == ".py"]
+          if not modules:
+              sys.exit("git tracks no module under src/blende. Refusing to pass.")
+
+          problems = []
+
+          for module in modules:
+              on = any(fnmatch.fnmatch(module, pattern) for pattern in surface)
+              off = module in off_the_surface
+              if on and off:
+                  problems.append(
+                      f"{module} is on the named surface and named as off it. "
+                      "One module, one answer."
+                  )
+              elif not on and not off:
+                  problems.append(
+                      f"{module} is neither on the named surface nor named as "
+                      "off it. Add it to [report] include if a regression in it "
+                      "decides a blinding outcome, and to [blende] not_surface "
+                      "with the reason if it does not."
+                  )
+
+          for named in off_the_surface:
+              if named not in tracked:
+                  problems.append(
+                      f"[blende] not_surface names {named}, which git does not "
+                      "track. A path that no longer exists leaves a permission "
+                      "behind it."
+                  )
+
+          for pattern in surface:
+              if not any(fnmatch.fnmatch(module, pattern) for module in modules):
+                  problems.append(
+                      f"[report] include names {pattern}, which matches no "
+                      "tracked module. The threshold would be held over less "
+                      "than the list says."
+                  )
+
+          for problem in problems:
+              print(f"::error::{problem}")
+          if problems:
+              sys.exit(1)
+
+          print(f"{len(modules)} module(s) under src/blende, each placed:")
+          for module in modules:
+              where = "off the surface" if module in off_the_surface else "on the surface"
+              print(f"  {module}: {where}")
+          PY
+
+      - name: The default suite runs under the measurement
+        run: |
+          set -euo pipefail
+          # The same entry point the `test` check runs, so a test that would be
+          # refused there is refused here. Nothing is installed for the suite
+          # itself; the measurement tool is the only thing this job added.
+          coverage run tools/default_suite.py
+
+      - name: Branch coverage on the named surface
+        run: |
+          set -euo pipefail
+          # No flags. The surface and the threshold are both in `.coveragerc`,
+          # and a flag here would be a second place either could be changed.
+          coverage report
+
+      - name: The whole-package number, reported and not gated
+        if: always()
+        run: |
+          set -euo pipefail
+          # Reported rather than gated, because a single global threshold is a
+          # number people manage instead of a property they hold. It is written
+          # to the run summary so a reader sees it without opening the log.
+          #
+          # `if: always()` so the number and the report below survive a red
+          # threshold. A run whose suite never finished has nothing to read,
+          # and that is said rather than passed over.
+          if [ ! -f .coverage ]; then
+            echo "No measurement was recorded, so there is no report. The suite did not finish."
+            exit 0
+          fi
+
+          {
+            echo '## Coverage over the whole package'
+            echo
+            echo '```'
+            coverage report --include='src/blende/*' --fail-under=0
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          coverage html --include='src/blende/*' --fail-under=0
+          coverage xml --include='src/blende/*' --fail-under=0
+
+      - name: The report, uploaded whether the threshold held or not
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-report
+          path: coverage-report/
+          # A warning rather than a failure. The empty case is a suite that did
+          # not finish, which is already red on its own step, and a second red
+          # for the missing report would name the wrong cause.
+          if-no-files-found: warn

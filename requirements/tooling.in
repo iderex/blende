@@ -18,3 +18,10 @@
 # The formatter and the linter, one build of one tool, pinned in
 # `.github/workflows/style.yml` where both `fmt` and `lint` read it.
 ruff==0.16.2
+
+# The coverage measurement, pinned in `.github/workflows/coverage.yml` where
+# the `coverage` gate reads it. It is the one tool here the standard library
+# cannot stand in for: `trace` counts lines and issue #27 gates on branches,
+# and a refusal that is reached without its refusing branch being taken is
+# exactly what a line count reports as covered.
+coverage==7.15.4
