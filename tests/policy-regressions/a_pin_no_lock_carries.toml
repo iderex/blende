@@ -1,0 +1,11 @@
+# refusal: pin-outside-the-lock
+#
+# A workflow installing a tool at a version no lock carries, which is what a
+# pin bumped in one place and left alone in the other looks like from here.
+# The version is one that does not exist, so nothing in this scenario depends
+# on what the index happens to hold for it.
+
+declared = {}
+recorded = {}
+locked = {}
+pins = ["ruff==0.0.0-not-a-release"]

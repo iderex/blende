@@ -1,0 +1,14 @@
+# refusal: license-outside-the-allow-list
+#
+# A distribution whose license the allow list does not carry.
+#
+# mysqlclient 2.2.4 declares GNU General Public License v2 (GPLv2) in the
+# free-text metadata field, which is GPL version 2 with no `or later`, and that
+# is the one-way incompatibility with this repository's own AGPL-3.0 that the
+# allow list exists to refuse. It is also a version the advisory database holds
+# nothing against, so this scenario trips exactly one refusal.
+
+declared.runtime = ["python>=3.11", "mysqlclient==2.2.4"]
+recorded.runtime = ["python>=3.11", "mysqlclient==2.2.4"]
+locked.runtime = ["mysqlclient==2.2.4"]
+pins = []

@@ -1,0 +1,31 @@
+# Advisories this repository has decided to carry, each with the date it was
+# decided and the reason.
+#
+# Issue #26 makes both halves of the `deny` check fail closed, and this file is
+# the only way an advisory stops being a refusal. It is deliberately not a
+# suppression list: an entry that covers nothing the run found is refused as
+# hard as an advisory with no entry, so the register cannot quietly outlive the
+# advisory it was written for. Deleting the fix and keeping the acceptance
+# turns the gate red rather than green.
+#
+# An entry carries four fields and the check refuses one that does not:
+#
+#     [[acceptance]]
+#     advisory = "GHSA-0000-0000-0000"
+#     distribution = "example"
+#     date = "2026-08-09"
+#     reason = """
+#     Why this is carried rather than fixed. An advisory with no fixed
+#     version available is the case this file exists for. Name the reach: what
+#     the vulnerable code path is, and why nothing in this repository takes it.
+#     """
+#
+# The date is when the decision was taken, as YYYY-MM-DD, and it is what makes
+# the entry revisitable. It is not an expiry: nothing here reads a clock, and
+# an entry stops applying when the advisory stops being reported, not when a
+# date passes.
+#
+# There is no entry today. That is a statement about what the two locks
+# resolved to and nothing more:
+#
+#     python tools/dependency_policy.py

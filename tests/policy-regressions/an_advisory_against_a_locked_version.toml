@@ -1,0 +1,14 @@
+# refusal: advisory
+#
+# A distribution pinned at a version the advisory database holds entries
+# against, with nothing in the acceptance register naming them.
+#
+# PyYAML 5.3.1 is the version rather than an invented one, because the point of
+# this scenario is that the database answers. Its license is MIT, so the same
+# run reads the license and allows it, and this scenario trips exactly one
+# refusal.
+
+declared.runtime = ["python>=3.11", "pyyaml==5.3.1"]
+recorded.runtime = ["python>=3.11", "pyyaml==5.3.1"]
+locked.runtime = ["pyyaml==5.3.1"]
+pins = []

@@ -1,0 +1,13 @@
+# refusal: lock-does-not-match-the-declared-inputs
+#
+# A dependency added to the tree after the lock was written. The lock still
+# says what it resolved, and what it resolved is no longer the question being
+# asked, so every answer downstream of it is about a set nobody installs.
+#
+# Nothing is locked here, and that is what keeps the scenario to one refusal: a
+# drifted lock is refused before any version in it is worth asking about.
+
+declared.runtime = ["python>=3.11", "numpy", "scipy"]
+recorded.runtime = ["python>=3.11", "numpy"]
+locked.runtime = []
+pins = []
