@@ -174,10 +174,13 @@ OPT_IN_SUITES: tuple[OptIn, ...] = (
         issue="#13",
         needs=(
             "a smartcard or a hardware security module present on the host, "
-            "with the blinding key already loaded onto it. The default suite "
-            "covers the same interface with a software implementation that "
-            "defines the result, so this suite proves the device path and "
-            "never defines what the answer is"
+            "with the blinding key already loaded onto it. Neither this suite "
+            "nor its default-suite counterpart is written: the key module "
+            "takes material and hands it back, so there is no interface for a "
+            "device to sit behind, and issue #4 is where one arrives. Once it "
+            "does, the default suite covers it with a software implementation "
+            "that defines the result and this suite proves the device path "
+            "only"
         ),
     ),
     OptIn(
@@ -185,9 +188,11 @@ OPT_IN_SUITES: tuple[OptIn, ...] = (
         issue="#13",
         needs=(
             "a network connection and an authority to contact, which is the "
-            "one path in this project that sends anything off the host. A "
-            "recorded exchange stands in for the live one in the default "
-            "suite, so only the connection itself is uncovered here"
+            "one path in this project that sends anything off the host. "
+            "Neither this suite nor the recorded exchange that would stand in "
+            "for it is written, so the parsing and the verification are "
+            "uncovered here as well as the connection. Once the recording "
+            "lands in the default suite, the connection is what is left"
         ),
     ),
     OptIn(
