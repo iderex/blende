@@ -1,0 +1,17 @@
+# refusal: acceptance-without-a-date-and-a-reason
+#
+# An entry in the acceptance register carrying the advisory, the distribution
+# and the date, and no reason. The register is the only route by which an
+# advisory stops being a refusal, so an entry that says nothing about why is
+# the shape a suppression list takes when nobody is looking.
+
+declared = {}
+recorded = {}
+locked = {}
+pins = []
+
+[[acceptance]]
+advisory = "GHSA-8q59-q68h-6hv4"
+distribution = "pyyaml"
+date = "2026-08-09"
+reason = ""
