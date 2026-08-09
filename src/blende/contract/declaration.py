@@ -44,9 +44,30 @@ It is the operator's own text and nothing sanitises it, in the same words issue
     for each declaration, ordered by the canonical bytes of its name:
         <name> <kind> <low> <high> <transform> <blinded> <reason>
 
-every field length-prefixed by `canonical.frame`, text through
-`canonical.canonical_text` and the two range endpoints through
-`canonical.canonical_double`. The order is the canonical name bytes rather than
+every field length-prefixed by `canonical.frame`. The name, the kind, the
+transform and the word for whether the parameter is blinded go through
+`canonical.canonical_text`, which normalises to NFC; the two range endpoints go
+through `canonical.canonical_double`. The identifier and the count are written
+by this module rather than supplied by anybody, and are encoded UTF-8 directly,
+where a normalisation would be the identity. The reason is neither: it is the
+operator's own prose and it is written as its exact UTF-8 bytes, unnormalised.
+
+The reason being unnormalised is issue #46's rule for prose that enters a
+commitment, and it is deliberate. Changing a document's bytes is what a
+commitment exists to detect, so a normaliser that silently rewrote what
+somebody typed would let the text be edited without the digest moving. There is
+a second, mechanical reason the field could not go through
+`canonical.canonical_text` as it stands: that function refuses an empty string,
+and a blinded declaration carries an empty reason.
+
+Both halves are stated because `contract/__init__.py` says a reader
+implementing this in another language reads these modules as prose about bytes.
+A reader who took the sentence above to cover every text field would normalise
+the reason and reach a different digest for the same declaration set, which is
+the failure the canonical encoding exists to prevent, and the reason line is
+the field an operator types and pastes into.
+
+The order is the canonical name bytes rather than
 the order somebody wrote them in, so a set that was reordered in its file
 digests the same, and UTF-8 byte order and code point order agree so an
 implementation sorting either way gets the same sequence.
