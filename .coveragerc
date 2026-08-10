@@ -52,14 +52,16 @@ include =
 #
 #     coverage run tools/default_suite.py
 #     coverage report
-#     TOTAL  147  2  36  2  97.81%
+#     TOTAL  186  1  48  1  99.15%
 #
-# The two branches not taken are both refusals, which is worth naming rather
-# than rounding away. `canonical_double` refuses a NaN and no case in the suite
-# hands it one, and `admissible_transforms` refuses a kind outside the closed
-# set, which a caller cannot reach while the enum and the table agree. They
-# belong to issues #2 and #36, whose modules those are.
-fail_under = 97.81
+# The one branch not taken is a refusal, which is worth naming rather than
+# rounding away. `admissible_transforms` refuses a kind outside the closed set,
+# which a caller cannot reach while the enum and the table agree, and it
+# belongs to issue #36. The other one named here until the mapping in issue #40
+# landed was `canonical_double` refusing a NaN, and the interval this mapping
+# draws from puts its endpoints through that function, so the suite now hands
+# it one.
+fail_under = 99.15
 
 [blende]
 # Modules under `src/blende/` that are deliberately off the named surface, each

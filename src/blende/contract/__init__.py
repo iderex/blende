@@ -20,9 +20,11 @@ differ between two runs of the same analysis. And a value that enters a digest
 enters it through `canonical`, so there is one answer to how a string becomes
 bytes rather than one per module.
 
-What is here today is the declaration set from issue #36 and the canonical
-encoding it is serialised by. The derivation, the commitment and the chain are
-issues #40, #46 and #54 and are not here yet.
+What is here today is the canonical encoding every value enters a digest
+through, the declaration set from issue #36, the blinding key from issue #42,
+and the mapping from digest bytes to a number from issue #40. The derivation
+that takes a digest under a key and hands it to that mapping is issue #37, the
+commitment is #46 and the chain is #54, and none of those three is here yet.
 """
 
 from __future__ import annotations
