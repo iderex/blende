@@ -44,6 +44,7 @@ from blende.contract.canonical import (  # noqa: E402
 from blende.contract.declaration import (  # noqa: E402
     ADMISSIBLE,
     CONTRACT,
+    DEFAULT_HALF_WIDTH_MULTIPLE,
     Declaration,
     DeclarationSet,
     Kind,
@@ -59,6 +60,8 @@ MASS = Declaration(
     kind=Kind.LOCATION,
     low=100.0,
     high=200.0,
+    uncertainty=2.0,
+    half_width_multiple=None,
     transform=Transform.OFFSET,
     blinded=True,
 )
@@ -67,6 +70,8 @@ WIDTH = Declaration(
     kind=Kind.SCALE,
     low=0.5,
     high=5.0,
+    uncertainty=0.25,
+    half_width_multiple=None,
     transform=Transform.FACTOR,
     blinded=True,
 )
@@ -75,6 +80,8 @@ EFFICIENCY = Declaration(
     kind=Kind.BOUNDED_FRACTION,
     low=0.0,
     high=1.0,
+    uncertainty=0.01,
+    half_width_multiple=None,
     transform=Transform.LOGIT_OFFSET,
     blinded=True,
 )
@@ -83,6 +90,8 @@ PROCESSED = Declaration(
     kind=Kind.COUNT,
     low=None,
     high=None,
+    uncertainty=None,
+    half_width_multiple=None,
     transform=Transform.NONE,
     blinded=False,
     reason="a bookkeeping number every consistency check is run against",
@@ -112,8 +121,12 @@ from blende.contract.declaration import Declaration, DeclarationSet, Kind, Trans
 print(
     DeclarationSet(
         (
-            Declaration("mass", Kind.LOCATION, 100.0, 200.0, Transform.OFFSET, True),
-            Declaration("width", Kind.SCALE, 0.5, 5.0, Transform.FACTOR, True),
+            Declaration(
+                "mass", Kind.LOCATION, 100.0, 200.0, 2.0, None, Transform.OFFSET, True
+            ),
+            Declaration(
+                "width", Kind.SCALE, 0.5, 5.0, 0.25, None, Transform.FACTOR, True
+            ),
         )
     ).digest()
 )
@@ -121,10 +134,12 @@ print(
 
 
 class DeclarationFieldsTest(unittest.TestCase):
-    def test_a_declaration_carries_the_five_fields_and_the_reason(self):
+    def test_a_declaration_carries_its_fields_and_the_reason(self):
         self.assertEqual("mass", MASS.name)
         self.assertIs(Kind.LOCATION, MASS.kind)
         self.assertEqual((100.0, 200.0), (MASS.low, MASS.high))
+        self.assertEqual(2.0, MASS.uncertainty)
+        self.assertIsNone(MASS.half_width_multiple)
         self.assertIs(Transform.OFFSET, MASS.transform)
         self.assertTrue(MASS.blinded)
         self.assertEqual("", MASS.reason)
@@ -146,18 +161,29 @@ class DeclarationFieldsTest(unittest.TestCase):
 class InadmissiblePairingTest(unittest.TestCase):
     def test_an_offset_on_a_scale_parameter_is_refused(self):
         with self.assertRaises(Refusal) as refused:
-            Declaration("width", Kind.SCALE, 0.5, 5.0, Transform.OFFSET, True)
+            Declaration(
+                "width", Kind.SCALE, 0.5, 5.0, 1.0, None, Transform.OFFSET, True
+            )
         self.assertEqual("kind-admits-no-such-transform", refused.exception.rule)
 
     def test_a_factor_on_a_location_parameter_is_refused(self):
         with self.assertRaises(Refusal) as refused:
-            Declaration("mass", Kind.LOCATION, 100.0, 200.0, Transform.FACTOR, True)
+            Declaration(
+                "mass", Kind.LOCATION, 100.0, 200.0, 1.0, None, Transform.FACTOR, True
+            )
         self.assertEqual("kind-admits-no-such-transform", refused.exception.rule)
 
     def test_an_offset_on_a_bounded_fraction_is_refused(self):
         with self.assertRaises(Refusal) as refused:
             Declaration(
-                "efficiency", Kind.BOUNDED_FRACTION, 0.0, 1.0, Transform.OFFSET, True
+                "efficiency",
+                Kind.BOUNDED_FRACTION,
+                0.0,
+                1.0,
+                1.0,
+                None,
+                Transform.OFFSET,
+                True,
             )
         self.assertEqual("kind-admits-no-such-transform", refused.exception.rule)
 
@@ -167,14 +193,25 @@ class InadmissiblePairingTest(unittest.TestCase):
         # reader looking for the right one.
         for transform in (Transform.OFFSET, Transform.FACTOR, Transform.LOGIT_OFFSET):
             with self.assertRaises(Refusal) as refused:
-                Declaration("records-processed", Kind.COUNT, 0.0, 1e9, transform, True)
+                Declaration(
+                    "records-processed",
+                    Kind.COUNT,
+                    0.0,
+                    1e9,
+                    1.0,
+                    None,
+                    transform,
+                    True,
+                )
             self.assertEqual("kind-admits-no-transform", refused.exception.rule)
 
     def test_the_refusal_names_no_value_from_the_declaration(self):
         # Issue #18. The message identifies the parameter by name and says what
         # is wrong; the range is a number the analyst declared and it stays out.
         with self.assertRaises(Refusal) as refused:
-            Declaration("width", Kind.SCALE, 0.5, 5.0, Transform.OFFSET, True)
+            Declaration(
+                "width", Kind.SCALE, 0.5, 5.0, 1.0, None, Transform.OFFSET, True
+            )
         rendered = str(refused.exception)
         self.assertNotIn("0.5", rendered)
         self.assertNotIn("5.0", rendered)
@@ -186,6 +223,8 @@ class NeverBlindedTest(unittest.TestCase):
             Declaration(
                 "records-processed",
                 Kind.COUNT,
+                None,
+                None,
                 None,
                 None,
                 Transform.OFFSET,
@@ -205,6 +244,8 @@ class NeverBlindedTest(unittest.TestCase):
                 Kind.COUNT,
                 0.0,
                 1e9,
+                None,
+                None,
                 Transform.NONE,
                 False,
                 "a bookkeeping number",
@@ -221,6 +262,8 @@ class NeverBlindedTest(unittest.TestCase):
                     Kind.COUNT,
                     low,
                     high,
+                    None,
+                    None,
                     Transform.NONE,
                     False,
                     "a bookkeeping number",
@@ -230,7 +273,14 @@ class NeverBlindedTest(unittest.TestCase):
     def test_a_never_blinded_parameter_with_no_reason_is_refused(self):
         with self.assertRaises(Refusal) as refused:
             Declaration(
-                "records-processed", Kind.COUNT, None, None, Transform.NONE, False
+                "records-processed",
+                Kind.COUNT,
+                None,
+                None,
+                None,
+                None,
+                Transform.NONE,
+                False,
             )
         self.assertEqual("never-blinded-carries-a-reason", refused.exception.rule)
 
@@ -239,6 +289,8 @@ class NeverBlindedTest(unittest.TestCase):
             Declaration(
                 "records-processed",
                 Kind.COUNT,
+                None,
+                None,
                 None,
                 None,
                 Transform.NONE,
@@ -250,7 +302,15 @@ class NeverBlindedTest(unittest.TestCase):
     def test_a_blinded_parameter_carrying_a_reason_is_refused(self):
         with self.assertRaises(Refusal) as refused:
             Declaration(
-                "mass", Kind.LOCATION, 100.0, 200.0, Transform.OFFSET, True, "because"
+                "mass",
+                Kind.LOCATION,
+                100.0,
+                200.0,
+                1.0,
+                None,
+                Transform.OFFSET,
+                True,
+                "because",
             )
         self.assertEqual(
             "reason-belongs-to-a-never-blinded-parameter", refused.exception.rule
@@ -264,7 +324,9 @@ class NeverBlindedTest(unittest.TestCase):
 class RangeTest(unittest.TestCase):
     def test_a_blinded_parameter_with_no_range_is_refused(self):
         with self.assertRaises(Refusal) as refused:
-            Declaration("mass", Kind.LOCATION, None, None, Transform.OFFSET, True)
+            Declaration(
+                "mass", Kind.LOCATION, None, None, 1.0, None, Transform.OFFSET, True
+            )
         self.assertEqual("blinded-carries-a-range", refused.exception.rule)
 
     def test_a_blinded_parameter_with_one_endpoint_is_refused(self):
@@ -272,7 +334,9 @@ class RangeTest(unittest.TestCase):
         # file that had one of the two, and it sizes nothing.
         for low, high in ((100.0, None), (None, 200.0)):
             with self.assertRaises(Refusal) as refused:
-                Declaration("mass", Kind.LOCATION, low, high, Transform.OFFSET, True)
+                Declaration(
+                    "mass", Kind.LOCATION, low, high, 1.0, None, Transform.OFFSET, True
+                )
             self.assertEqual("blinded-carries-a-range", refused.exception.rule)
 
     def test_an_absent_range_is_not_a_zero_range_in_the_bytes(self):
@@ -287,23 +351,29 @@ class RangeTest(unittest.TestCase):
             canonical_text(name, Kind.COUNT.value),
             canonical_double(name, 0.0),
             canonical_double(name, 0.0),
+            canonical_double(name, 0.0),
+            canonical_double(name, 0.0),
             canonical_text(name, Transform.NONE.value),
             canonical_text(name, "never-blinded"),
             PROCESSED.reason.encode("utf-8"),
         )
         self.assertNotEqual(PROCESSED.canonical_bytes(), zeroed)
-        # And the sixteen bytes the two endpoints occupy when they are there
-        # are the whole of the difference.
-        self.assertEqual(len(zeroed) - 16, len(PROCESSED.canonical_bytes()))
+        # And the thirty-two bytes the four absent numbers occupy when they are
+        # there are the whole of the difference.
+        self.assertEqual(len(zeroed) - 32, len(PROCESSED.canonical_bytes()))
 
     def test_a_range_with_no_width_is_refused(self):
         with self.assertRaises(Refusal) as refused:
-            Declaration("mass", Kind.LOCATION, 100.0, 100.0, Transform.OFFSET, True)
+            Declaration(
+                "mass", Kind.LOCATION, 100.0, 100.0, 1.0, None, Transform.OFFSET, True
+            )
         self.assertEqual("range-is-not-ordered", refused.exception.rule)
 
     def test_a_reversed_range_is_refused(self):
         with self.assertRaises(Refusal) as refused:
-            Declaration("mass", Kind.LOCATION, 200.0, 100.0, Transform.OFFSET, True)
+            Declaration(
+                "mass", Kind.LOCATION, 200.0, 100.0, 1.0, None, Transform.OFFSET, True
+            )
         self.assertEqual("range-is-not-ordered", refused.exception.rule)
 
     def test_an_endpoint_that_is_not_a_number_is_refused(self):
@@ -312,22 +382,172 @@ class RangeTest(unittest.TestCase):
         # here rather than left to be rediscovered: the encoder's own refusal
         # for it is unreachable through a declaration.
         with self.assertRaises(Refusal) as refused:
-            Declaration("mass", Kind.LOCATION, 100.0, math.nan, Transform.OFFSET, True)
+            Declaration(
+                "mass",
+                Kind.LOCATION,
+                100.0,
+                math.nan,
+                1.0,
+                None,
+                Transform.OFFSET,
+                True,
+            )
         self.assertEqual("range-is-not-ordered", refused.exception.rule)
 
     def test_an_infinite_endpoint_reaches_the_encoder_and_is_refused(self):
         declared = Declaration(
-            "mass", Kind.LOCATION, 100.0, math.inf, Transform.OFFSET, True
+            "mass", Kind.LOCATION, 100.0, math.inf, 1.0, None, Transform.OFFSET, True
         )
         with self.assertRaises(Refusal) as refused:
             declared.canonical_bytes()
         self.assertEqual("number-is-not-finite", refused.exception.rule)
 
 
+class ScaleTheTransformIsDrawnFromTest(unittest.TestCase):
+    def test_a_blinded_parameter_with_no_uncertainty_is_refused(self):
+        with self.assertRaises(Refusal) as refused:
+            Declaration(
+                "mass", Kind.LOCATION, 100.0, 200.0, None, None, Transform.OFFSET, True
+            )
+        self.assertEqual("blinded-carries-an-uncertainty", refused.exception.rule)
+
+    def test_an_uncertainty_of_zero_or_less_is_refused(self):
+        # Zero is the near miss. A comparison written `>=` admits it, and the
+        # interval it produces has no width, so every parameter declared that
+        # way draws the same offset and a reader can subtract it.
+        for stated in (0.0, -1.0):
+            with self.assertRaises(Refusal) as refused:
+                Declaration(
+                    "mass",
+                    Kind.LOCATION,
+                    100.0,
+                    200.0,
+                    stated,
+                    None,
+                    Transform.OFFSET,
+                    True,
+                )
+            self.assertEqual("uncertainty-is-not-positive", refused.exception.rule)
+
+    def test_an_uncertainty_that_is_not_a_number_is_refused(self):
+        # Every comparison against it is false, so the guard has to be written
+        # in the admitting direction to catch it. Recorded as a case because
+        # the encoder's own refusal for it is unreachable from here.
+        with self.assertRaises(Refusal) as refused:
+            Declaration(
+                "mass",
+                Kind.LOCATION,
+                100.0,
+                200.0,
+                math.nan,
+                None,
+                Transform.OFFSET,
+                True,
+            )
+        self.assertEqual("uncertainty-is-not-positive", refused.exception.rule)
+
+    def test_a_multiple_of_zero_or_less_is_refused(self):
+        for stated in (0.0, -5.0):
+            with self.assertRaises(Refusal) as refused:
+                Declaration(
+                    "mass",
+                    Kind.LOCATION,
+                    100.0,
+                    200.0,
+                    2.0,
+                    stated,
+                    Transform.OFFSET,
+                    True,
+                )
+            self.assertEqual(
+                "half-width-multiple-is-not-positive", refused.exception.rule
+            )
+
+    def test_a_never_blinded_parameter_carrying_either_is_refused(self):
+        # Both directions, because a rule that reads only the uncertainty
+        # passes the half of the case that arrives when somebody overrides the
+        # multiple on a parameter that is never transformed.
+        for uncertainty, multiple in ((2.0, None), (None, 5.0)):
+            with self.assertRaises(Refusal) as refused:
+                Declaration(
+                    "records-processed",
+                    Kind.COUNT,
+                    None,
+                    None,
+                    uncertainty,
+                    multiple,
+                    Transform.NONE,
+                    False,
+                    "a bookkeeping number",
+                )
+            self.assertEqual("never-blinded-carries-no-scale", refused.exception.rule)
+
+    def test_the_default_multiple_is_the_one_the_maintainer_decided(self):
+        # Entry 8 of issue #19, 2026-08-08. Asserted against the constant and
+        # against the number, because a constant renamed to something else and
+        # read back through itself would pass the first comparison alone.
+        self.assertEqual(5.0, DEFAULT_HALF_WIDTH_MULTIPLE)
+        self.assertEqual(DEFAULT_HALF_WIDTH_MULTIPLE, MASS.resolved_multiple())
+
+    def test_an_override_replaces_the_default_rather_than_scaling_it(self):
+        overridden = Declaration(
+            "mass", Kind.LOCATION, 100.0, 200.0, 2.0, 3.0, Transform.OFFSET, True
+        )
+        self.assertEqual(3.0, overridden.resolved_multiple())
+        self.assertEqual(6.0, overridden.half_width())
+
+    def test_the_half_width_is_the_multiple_times_the_uncertainty(self):
+        self.assertEqual(10.0, MASS.half_width())
+
+    def test_a_never_blinded_parameter_has_no_half_width(self):
+        with self.assertRaises(Refusal) as refused:
+            PROCESSED.half_width()
+        self.assertEqual("never-blinded-has-no-half-width", refused.exception.rule)
+
+    def test_the_default_and_the_number_that_spells_it_are_one_digest(self):
+        # The reason the resolved multiple is written into the bytes rather
+        # than the field. Two operators declaring the same analysis, one taking
+        # the default and one naming it, commit to one digest.
+        taken = DeclarationSet((MASS,)).digest()
+        spelled = DeclarationSet(
+            (
+                Declaration(
+                    "mass",
+                    Kind.LOCATION,
+                    100.0,
+                    200.0,
+                    2.0,
+                    DEFAULT_HALF_WIDTH_MULTIPLE,
+                    Transform.OFFSET,
+                    True,
+                ),
+            )
+        ).digest()
+        self.assertEqual(taken, spelled)
+
+    def test_a_changed_uncertainty_changes_the_digest(self):
+        widened = Declaration(
+            "mass", Kind.LOCATION, 100.0, 200.0, 2.5, None, Transform.OFFSET, True
+        )
+        self.assertNotEqual(
+            DeclarationSet((MASS,)).digest(), DeclarationSet((widened,)).digest()
+        )
+
+    def test_a_changed_multiple_changes_the_digest(self):
+        widened = Declaration(
+            "mass", Kind.LOCATION, 100.0, 200.0, 2.0, 6.0, Transform.OFFSET, True
+        )
+        self.assertNotEqual(
+            DeclarationSet((MASS,)).digest(), DeclarationSet((widened,)).digest()
+        )
+
+
 class NameTest(unittest.TestCase):
     def test_an_empty_name_is_refused(self):
         with self.assertRaises(Refusal) as refused:
-            Declaration("", Kind.LOCATION, 100.0, 200.0, Transform.OFFSET, True)
+            Declaration(
+                "", Kind.LOCATION, 100.0, 200.0, 1.0, None, Transform.OFFSET, True
+            )
         self.assertEqual("text-is-empty", refused.exception.rule)
 
     def test_two_spellings_of_one_name_are_one_name(self):
@@ -338,10 +558,10 @@ class NameTest(unittest.TestCase):
         # parameters to the package and one to every reader, and they
         # derive different offsets.
         composed = Declaration(
-            "m\u00fc", Kind.LOCATION, 100.0, 200.0, Transform.OFFSET, True
+            "m\u00fc", Kind.LOCATION, 100.0, 200.0, 1.0, None, Transform.OFFSET, True
         )
         decomposed = Declaration(
-            "mu\u0308", Kind.LOCATION, 100.0, 200.0, Transform.OFFSET, True
+            "mu\u0308", Kind.LOCATION, 100.0, 200.0, 1.0, None, Transform.OFFSET, True
         )
         self.assertEqual(composed.canonical_bytes(), decomposed.canonical_bytes())
         with self.assertRaises(Refusal) as refused:
@@ -394,6 +614,8 @@ class CanonicalBytesTest(unittest.TestCase):
                         kind=Kind.COUNT,
                         low=None,
                         high=None,
+                        uncertainty=None,
+                        half_width_multiple=None,
                         transform=Transform.NONE,
                         blinded=False,
                         reason=reason,
@@ -408,7 +630,11 @@ class CanonicalBytesTest(unittest.TestCase):
         # property of the pair.
         def named(name):
             return DeclarationSet(
-                (Declaration(name, Kind.LOCATION, 1.0, 2.0, Transform.OFFSET, True),)
+                (
+                    Declaration(
+                        name, Kind.LOCATION, 1.0, 2.0, 1.0, None, Transform.OFFSET, True
+                    ),
+                )
             ).digest()
 
         self.assertEqual(named("m\u00fc"), named("mu\u0308"))
@@ -423,14 +649,23 @@ class CanonicalBytesTest(unittest.TestCase):
         self.assertEqual(b"\x00\x00\x00\x00\x00\x00\x00\x02ab", frame(b"ab"))
 
     def test_a_changed_range_changes_the_digest(self):
-        moved = Declaration("mass", Kind.LOCATION, 100.0, 200.5, Transform.OFFSET, True)
+        moved = Declaration(
+            "mass", Kind.LOCATION, 100.0, 200.5, 1.0, None, Transform.OFFSET, True
+        )
         self.assertNotEqual(
             DeclarationSet((MASS,)).digest(), DeclarationSet((moved,)).digest()
         )
 
     def test_a_renamed_parameter_changes_the_digest(self):
         renamed = Declaration(
-            "mass-hypothesis", Kind.LOCATION, 100.0, 200.0, Transform.OFFSET, True
+            "mass-hypothesis",
+            Kind.LOCATION,
+            100.0,
+            200.0,
+            1.0,
+            None,
+            Transform.OFFSET,
+            True,
         )
         self.assertNotEqual(
             DeclarationSet((MASS,)).digest(), DeclarationSet((renamed,)).digest()
@@ -448,6 +683,8 @@ class CanonicalBytesTest(unittest.TestCase):
         never = Declaration(
             "mass",
             Kind.LOCATION,
+            None,
+            None,
             None,
             None,
             Transform.NONE,
@@ -487,6 +724,8 @@ class TheSetTheCommitmentNamesTest(unittest.TestCase):
                     Kind.LOCATION,
                     100.0,
                     200.0,
+                    1.0,
+                    None,
                     Transform.OFFSET,
                     True,
                 ),
