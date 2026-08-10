@@ -36,7 +36,11 @@ SOURCE = REPOSITORY / "src"
 
 sys.path.insert(0, str(SOURCE))
 
-from blende.contract.canonical import frame  # noqa: E402
+from blende.contract.canonical import (  # noqa: E402
+    canonical_double,
+    canonical_text,
+    frame,
+)
 from blende.contract.declaration import (  # noqa: E402
     ADMISSIBLE,
     CONTRACT,
@@ -77,8 +81,8 @@ EFFICIENCY = Declaration(
 PROCESSED = Declaration(
     name="records-processed",
     kind=Kind.COUNT,
-    low=0.0,
-    high=1e9,
+    low=None,
+    high=None,
     transform=Transform.NONE,
     blinded=False,
     reason="a bookkeeping number every consistency check is run against",
@@ -182,25 +186,64 @@ class NeverBlindedTest(unittest.TestCase):
             Declaration(
                 "records-processed",
                 Kind.COUNT,
-                0.0,
-                1e9,
+                None,
+                None,
                 Transform.OFFSET,
                 False,
                 "a bookkeeping number",
             )
         self.assertEqual("never-blinded-carries-no-transform", refused.exception.rule)
 
+    def test_a_never_blinded_parameter_carrying_a_range_is_refused(self):
+        # Issue #44. The range sizes a transform, and this parameter has none
+        # for it to size. Requiring one made an operator invent two numbers
+        # that then entered the canonical bytes, so two operators making the
+        # same honest declaration reached different digests.
+        with self.assertRaises(Refusal) as refused:
+            Declaration(
+                "records-processed",
+                Kind.COUNT,
+                0.0,
+                1e9,
+                Transform.NONE,
+                False,
+                "a bookkeeping number",
+            )
+        self.assertEqual("never-blinded-carries-no-range", refused.exception.rule)
+
+    def test_one_endpoint_on_a_never_blinded_parameter_is_refused_too(self):
+        # Both directions, because a rule that reads only `low` passes the
+        # half of the case that arrives when somebody deletes one argument.
+        for low, high in ((0.0, None), (None, 1e9)):
+            with self.assertRaises(Refusal) as refused:
+                Declaration(
+                    "records-processed",
+                    Kind.COUNT,
+                    low,
+                    high,
+                    Transform.NONE,
+                    False,
+                    "a bookkeeping number",
+                )
+            self.assertEqual("never-blinded-carries-no-range", refused.exception.rule)
+
     def test_a_never_blinded_parameter_with_no_reason_is_refused(self):
         with self.assertRaises(Refusal) as refused:
             Declaration(
-                "records-processed", Kind.COUNT, 0.0, 1e9, Transform.NONE, False
+                "records-processed", Kind.COUNT, None, None, Transform.NONE, False
             )
         self.assertEqual("never-blinded-carries-a-reason", refused.exception.rule)
 
     def test_whitespace_is_not_a_reason(self):
         with self.assertRaises(Refusal) as refused:
             Declaration(
-                "records-processed", Kind.COUNT, 0.0, 1e9, Transform.NONE, False, "   "
+                "records-processed",
+                Kind.COUNT,
+                None,
+                None,
+                Transform.NONE,
+                False,
+                "   ",
             )
         self.assertEqual("never-blinded-carries-a-reason", refused.exception.rule)
 
@@ -219,6 +262,40 @@ class NeverBlindedTest(unittest.TestCase):
 
 
 class RangeTest(unittest.TestCase):
+    def test_a_blinded_parameter_with_no_range_is_refused(self):
+        with self.assertRaises(Refusal) as refused:
+            Declaration("mass", Kind.LOCATION, None, None, Transform.OFFSET, True)
+        self.assertEqual("blinded-carries-a-range", refused.exception.rule)
+
+    def test_a_blinded_parameter_with_one_endpoint_is_refused(self):
+        # Half a range is the case that arrives when a value is read out of a
+        # file that had one of the two, and it sizes nothing.
+        for low, high in ((100.0, None), (None, 200.0)):
+            with self.assertRaises(Refusal) as refused:
+                Declaration("mass", Kind.LOCATION, low, high, Transform.OFFSET, True)
+            self.assertEqual("blinded-carries-a-range", refused.exception.rule)
+
+    def test_an_absent_range_is_not_a_zero_range_in_the_bytes(self):
+        # A never-blinded declaration writes its two endpoint fields empty.
+        # The encoding somebody reaches for instead is the double zero, and
+        # the two have to be different bytes, otherwise an absent range and a
+        # range from zero to zero reach one digest. The length prefix in front
+        # of each field is what separates them.
+        name = "records-processed"
+        zeroed = frame(
+            canonical_text(name, name),
+            canonical_text(name, Kind.COUNT.value),
+            canonical_double(name, 0.0),
+            canonical_double(name, 0.0),
+            canonical_text(name, Transform.NONE.value),
+            canonical_text(name, "never-blinded"),
+            PROCESSED.reason.encode("utf-8"),
+        )
+        self.assertNotEqual(PROCESSED.canonical_bytes(), zeroed)
+        # And the sixteen bytes the two endpoints occupy when they are there
+        # are the whole of the difference.
+        self.assertEqual(len(zeroed) - 16, len(PROCESSED.canonical_bytes()))
+
     def test_a_range_with_no_width_is_refused(self):
         with self.assertRaises(Refusal) as refused:
             Declaration("mass", Kind.LOCATION, 100.0, 100.0, Transform.OFFSET, True)
@@ -315,8 +392,8 @@ class CanonicalBytesTest(unittest.TestCase):
                     Declaration(
                         name="records-processed",
                         kind=Kind.COUNT,
-                        low=0.0,
-                        high=1e9,
+                        low=None,
+                        high=None,
                         transform=Transform.NONE,
                         blinded=False,
                         reason=reason,
@@ -360,14 +437,19 @@ class CanonicalBytesTest(unittest.TestCase):
         )
 
     def test_whether_a_parameter_is_blinded_reaches_the_digest(self):
-        # The same name and the same range, blinded and not. A commitment that
-        # could not tell the two apart would let a parameter be quietly taken
-        # out of the blinding after the plan was fixed.
+        # The same parameter, blinded and not. A commitment that could not
+        # tell the two apart would let a parameter be quietly taken out of the
+        # blinding after the plan was fixed.
+        #
+        # The two forms differ in more than the word now, because a
+        # never-blinded declaration carries no range and a blinded one must.
+        # So the word is asserted in the bytes as well, otherwise this case
+        # would still pass if the word stopped being written at all.
         never = Declaration(
             "mass",
             Kind.LOCATION,
-            100.0,
-            200.0,
+            None,
+            None,
             Transform.NONE,
             False,
             "fixed by an external measurement",
@@ -375,6 +457,8 @@ class CanonicalBytesTest(unittest.TestCase):
         self.assertNotEqual(
             DeclarationSet((MASS,)).digest(), DeclarationSet((never,)).digest()
         )
+        self.assertIn(b"never-blinded", never.canonical_bytes())
+        self.assertIn(b"blinded", MASS.canonical_bytes())
 
 
 class DigestAcrossProcessesTest(unittest.TestCase):

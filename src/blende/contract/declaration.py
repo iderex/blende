@@ -10,6 +10,18 @@ closed set. A range the true value is expected to lie in, which is what the
 transform is sized against. The transform to apply, which the kind constrains.
 Whether the parameter is blinded at all, and the reason where it is not.
 
+The range is carried by a blinded declaration and refused on a never-blinded
+one, which is issue #44's field set rather than #36's. The range exists to size
+a transform, and a parameter that is never blinded has no transform for it to
+size: requiring one made an operator declaring a calibration constant, a
+control region yield or a count of records invent two numbers to get past a
+check whose own message says why they are not needed, and those two invented
+numbers entered the canonical bytes and therefore the commitment, so two
+operators making the same honest declaration committed to different digests. It
+also cost a reader. A range beside a parameter in a plan reads as a statement
+about where the true value was expected to lie, and for a never-blinded
+parameter the operator never made that statement.
+
 The kind decides which transform is admissible and the admissible set is small
 on purpose. A location parameter admits an offset. A scale parameter admits a
 factor, because an additive offset can send a positive quantity negative and
@@ -47,10 +59,14 @@ It is the operator's own text and nothing sanitises it, in the same words issue
 every field length-prefixed by `canonical.frame`. The name, the kind, the
 transform and the word for whether the parameter is blinded go through
 `canonical.canonical_text`, which normalises to NFC; the two range endpoints go
-through `canonical.canonical_double`. The identifier and the count are written
-by this module rather than supplied by anybody, and are encoded UTF-8 directly,
-where a normalisation would be the identity. The reason is neither: it is the
-operator's own prose and it is written as its exact UTF-8 bytes, unnormalised.
+through `canonical.canonical_double` where there is a range, and are written as
+empty fields where there is not. An empty field is not the same field as eight
+bytes of zero, because the length prefix in front of it says so, which is what
+lets the absence of a range be part of the encoding rather than a hole in it.
+The identifier and the count are written by this module rather than supplied by
+anybody, and are encoded UTF-8 directly, where a normalisation would be the
+identity. The reason is neither: it is the operator's own prose and it is
+written as its exact UTF-8 bytes, unnormalised.
 
 The reason being unnormalised is issue #46's rule for prose that enters a
 commitment, and it is deliberate. Changing a document's bytes is what a
@@ -97,7 +113,13 @@ from .refusal import Refusal
 
 # The identifier these bytes are produced under. It is part of the digest, so
 # two contracts cannot produce one digest.
-CONTRACT = "blende/declaration-set/1"
+#
+# It reads 2 because a never-blinded declaration no longer carries a range, so
+# the bytes of every such declaration moved. Issue #2 makes a changed contract
+# a new identifier rather than an edit to the old one, and it asks nothing
+# about whether anybody has read the old one. Nothing in this package writes an
+# artefact yet, so the set of digests in the wild under version 1 is empty.
+CONTRACT = "blende/declaration-set/2"
 
 # The digest primitive over the canonical bytes. Issue #46 fixes the primitive
 # for the commitment over a plan, and when it lands this line is what it cites
@@ -154,8 +176,12 @@ class Declaration:
 
     name: str
     kind: Kind
-    low: float
-    high: float
+    # Both endpoints or neither. A blinded parameter carries the range its
+    # transform is sized against; a never-blinded one is written with `None`
+    # twice, so the absence is stated at every call site rather than defaulted
+    # into.
+    low: float | None
+    high: float | None
     transform: Transform
     blinded: bool
     # Required where the parameter is never blinded, refused where it is.
@@ -166,15 +192,8 @@ class Declaration:
         # cannot enter a digest is refused when it is written rather than when
         # a commitment is taken over it.
         canonical_text(self.name, self.name)
-        if not self.low < self.high:
-            raise Refusal(
-                "range-is-not-ordered",
-                self.name,
-                "the range is what the transform is sized against, and a "
-                "range whose lower endpoint is not below its upper one has no "
-                "width to size anything against",
-            )
         if self.blinded:
+            self._check_it_carries_the_range_its_transform_is_sized_against()
             self._check_the_kind_admits_the_transform()
             if self.reason:
                 raise Refusal(
@@ -192,12 +211,41 @@ class Declaration:
                 "a parameter declared as never blinded and carrying a "
                 "transform is a declaration that disagrees with itself",
             )
+        if self.low is not None or self.high is not None:
+            raise Refusal(
+                "never-blinded-carries-no-range",
+                self.name,
+                "the range is what a transform is sized against, so a "
+                "parameter that is never transformed has nothing for it to "
+                "size, and a range in a plan reads as a statement about where "
+                "the true value was expected to lie",
+            )
         if not self.reason.strip():
             raise Refusal(
                 "never-blinded-carries-a-reason",
                 self.name,
                 "a parameter that is not blinded is a positive statement and "
                 "the reason is what a referee reads when they ask why",
+            )
+
+    def _check_it_carries_the_range_its_transform_is_sized_against(self) -> None:
+        low = self.low
+        high = self.high
+        if low is None or high is None:
+            raise Refusal(
+                "blinded-carries-a-range",
+                self.name,
+                "the transform is sized against the range the true value is "
+                "expected to lie in, and a blinded parameter that declares "
+                "one endpoint or neither has nothing to size it against",
+            )
+        if not low < high:
+            raise Refusal(
+                "range-is-not-ordered",
+                self.name,
+                "the range is what the transform is sized against, and a "
+                "range whose lower endpoint is not below its upper one has no "
+                "width to size anything against",
             )
 
     def _check_the_kind_admits_the_transform(self) -> None:
@@ -220,13 +268,25 @@ class Declaration:
             f"declaration names {self.transform.value}",
         )
 
+    def _endpoint_bytes(self, endpoint: float | None) -> bytes:
+        """An endpoint's bytes, or an empty field where there is no range.
+
+        The empty field is what the framing makes safe. `canonical.frame`
+        writes a length in front of every field, so a field of no bytes is a
+        field a reader can tell from eight bytes of zero, and the absence of a
+        range is encoded rather than skipped.
+        """
+        if endpoint is None:
+            return b""
+        return canonical_double(self.name, endpoint)
+
     def canonical_bytes(self) -> bytes:
         """The bytes this declaration contributes to a digest."""
         return frame(
             canonical_text(self.name, self.name),
             canonical_text(self.name, self.kind.value),
-            canonical_double(self.name, self.low),
-            canonical_double(self.name, self.high),
+            self._endpoint_bytes(self.low),
+            self._endpoint_bytes(self.high),
             canonical_text(self.name, self.transform.value),
             # A boolean is written as a word rather than as a byte, so the
             # stream stays readable to somebody implementing this from the
