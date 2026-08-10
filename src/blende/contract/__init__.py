@@ -22,9 +22,10 @@ bytes rather than one per module.
 
 What is here today is the canonical encoding every value enters a digest
 through, the declaration set from issue #36, the blinding key from issue #42,
-and the mapping from digest bytes to a number from issue #40. The derivation
-that takes a digest under a key and hands it to that mapping is issue #37, the
-commitment is #46 and the chain is #54, and none of those three is here yet.
+the mapping from digest bytes to a number from issue #40, and the offset a
+location parameter is blinded by from issue #37. The factor for a scale
+parameter is #38, the commitment is #46 and the chain is #54, and none of those
+three is here yet.
 """
 
 from __future__ import annotations

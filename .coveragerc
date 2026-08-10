@@ -30,18 +30,19 @@ precision = 2
 show_missing = True
 
 # The named surface: the part of the package that decides a blinding outcome.
-# Issue #27 names six, and one of them is in the tree today. The contract
+# Issue #27 names six, and two of them are in the tree today. The contract
 # package is the derivation's canonical encoding, the parameter declarations
-# and their digest, the blinding key and its fingerprint, and the refusal type
-# every guard in it raises.
+# and their digest, the blinding key and its fingerprint, the mapping from
+# digest bytes to a number, the offset a location parameter is blinded by, and
+# the refusal type every guard in it raises.
 #
-# The other five are named here so that a reader knows the list is short
+# The other four are named here so that a reader knows the list is short
 # because the code is, and not because somebody decided a path was not worth
-# gating. The derivation is issue #40, the commitment is #46 and #48, the chain
-# is #54, the region split is #61, and the artefact readers and writers are #11
-# with the formats in milestones 04 and 05. Each arrives on this list in the
-# change that adds it, and the check in the coverage job is what stops one
-# arriving quietly beside it.
+# gating. The commitment is #46 and #48, the chain is #54, the region split is
+# #61, and the artefact readers and writers are #11 with the formats in
+# milestones 04 and 05. Each arrives on this list in the change that adds it,
+# and the check in the coverage job is what stops one arriving quietly beside
+# it.
 include =
     src/blende/contract/*
 
@@ -52,7 +53,7 @@ include =
 #
 #     coverage run tools/default_suite.py
 #     coverage report
-#     TOTAL  186  1  48  1  99.15%
+#     TOTAL  231  1  64  1  99.32%
 #
 # The one branch not taken is a refusal, which is worth naming rather than
 # rounding away. `admissible_transforms` refuses a kind outside the closed set,
@@ -61,7 +62,7 @@ include =
 # landed was `canonical_double` refusing a NaN, and the interval this mapping
 # draws from puts its endpoints through that function, so the suite now hands
 # it one.
-fail_under = 99.15
+fail_under = 99.32
 
 [blende]
 # Modules under `src/blende/` that are deliberately off the named surface, each
