@@ -1,0 +1,308 @@
+blende never-blinded blende/derivation-vectors/1 - -
+# Published vectors for the offset a location parameter is blinded by.
+#
+# Issue #43. An implementation in another language agrees with this package
+# when it reproduces every value below from the inputs beside them. Reading
+# this repository's source is not required and is not the intent.
+#
+# Format. One `name value` pair per line, records separated by a blank line, a
+# record opening with `vector <kind> <id>`. Lines beginning with `#` are
+# comments and the first line of the file is issue #11's field rather than a
+# comment. Byte strings are lower-case hexadecimal. Every number appears twice,
+# as the shortest decimal that round-trips and as its IEEE-754 binary64 bytes
+# big-endian; an implementation that agrees on the decimal alone has not been
+# tested.
+#
+# The keys here are published in this file. None of them is a key to use.
+#
+# A `vector offset` record: the material and the declaration go in, the framed
+# context and the keyed digest are the intermediate values an implementation
+# can check on their own, and the offset comes out. `name-utf8` is what a
+# caller passed and `name-nfc-utf8` is what reaches the message, and the two
+# differ wherever the name was not already in NFC. The value of `blinded` is
+# the word the canonical encoding writes rather than a true or a false, so the
+# field name and its value read the same on every record here.
+#
+# A `vector mapping` record: a digest chosen by hand and an interval go in, and
+# the number comes out. They exist because the two ends of the mapping are
+# digests no key and no name can be searched for.
+#
+# Regenerate with `python tools/derivation_vectors.py`. The default suite reads
+# this file and recomputes every field from the package without importing that
+# tool.
+
+format blende/derivation-vectors/1
+derivation-contract blende/location-offset/1
+key-contract blende/blinding-key/2
+digest sha256
+digest-bytes-read 8
+byte-order big
+divisor 18446744073709551616
+default-half-width-multiple 5.0
+minimum-blinding-string-characters 16
+minimum-key-material-bytes 16
+offset-vectors 8
+mapping-vectors 5
+
+vector offset ordinary-location-parameter
+purpose the common case: a location parameter with a declared range, a declared uncertainty and no multiple of its own
+key-source text
+key-text-utf8 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-material 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-fingerprint a81aca79ba5e5ad2c583a7c6ffb8622dbf41a5184530e82bd71a6adb8da68160
+name-utf8 6d617373
+name-nfc-utf8 6d617373
+kind location
+transform offset
+blinded blinded
+low-decimal 100.0
+low-bits 4059000000000000
+high-decimal 200.0
+high-bits 4069000000000000
+uncertainty-decimal 2.0
+uncertainty-bits 4000000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 10.0
+half-width-bits 4024000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f3100000000000000046d61737300000000000000066f6666736574
+digest dd25202a94a34c9500fcd3c31f1c4b42c2e71734c6696e7955a06f3d54d33b01
+offset-decimal 7.276954849160354
+offset-bits 401d1b9a0d4e7308
+
+vector offset second-parameter-under-one-key
+purpose the same key and a different name, which is the whole of the domain separation: an implementation that leaves the name out of the message agrees with the vector above and not with this
+key-source text
+key-text-utf8 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-material 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-fingerprint a81aca79ba5e5ad2c583a7c6ffb8622dbf41a5184530e82bd71a6adb8da68160
+name-utf8 6c69666574696d65
+name-nfc-utf8 6c69666574696d65
+kind location
+transform offset
+blinded blinded
+low-decimal 100.0
+low-bits 4059000000000000
+high-decimal 200.0
+high-bits 4069000000000000
+uncertainty-decimal 2.0
+uncertainty-bits 4000000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 10.0
+half-width-bits 4024000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f3100000000000000086c69666574696d6500000000000000066f6666736574
+digest 61abc85d63d592605f14f746d06f8db43dfd43d7e822e5ff2d4237d4e1ad831d
+offset-decimal -2.3694510879461768
+offset-bits c002f4a2c5a19a85
+
+vector offset range-straddling-zero
+purpose a range whose endpoints have opposite signs, and a small uncertainty, so the half-width is not the same order as the range
+key-source text
+key-text-utf8 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-material 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-fingerprint a81aca79ba5e5ad2c583a7c6ffb8622dbf41a5184530e82bd71a6adb8da68160
+name-utf8 74696d652d6f6666736574
+name-nfc-utf8 74696d652d6f6666736574
+kind location
+transform offset
+blinded blinded
+low-decimal -5.0
+low-bits c014000000000000
+high-decimal 5.0
+high-bits 4014000000000000
+uncertainty-decimal 0.25
+uncertainty-bits 3fd0000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 1.25
+half-width-bits 3ff4000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f31000000000000000b74696d652d6f666673657400000000000000066f6666736574
+digest 955e2f00d053ce13386818c6c4b7aa4fd0f7816a6c29bae4098b7c3fc26d5ed0
+offset-decimal 0.2086709444491302
+offset-bits 3fcab5bac10468c2
+
+vector offset half-width-multiple-declared-rather-than-defaulted
+purpose a declaration naming its own multiple, so the half-width is not the default multiple times the uncertainty and an implementation that hard-codes the default disagrees
+key-source text
+key-text-utf8 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-material 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-fingerprint a81aca79ba5e5ad2c583a7c6ffb8622dbf41a5184530e82bd71a6adb8da68160
+name-utf8 6d617373
+name-nfc-utf8 6d617373
+kind location
+transform offset
+blinded blinded
+low-decimal 100.0
+low-bits 4059000000000000
+high-decimal 200.0
+high-bits 4069000000000000
+uncertainty-decimal 2.0
+uncertainty-bits 4000000000000000
+multiple-decimal 2.5
+multiple-bits 4004000000000000
+half-width-decimal 5.0
+half-width-bits 4014000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f3100000000000000046d61737300000000000000066f6666736574
+digest dd25202a94a34c9500fcd3c31f1c4b42c2e71734c6696e7955a06f3d54d33b01
+offset-decimal 3.638477424580177
+offset-bits 400d1b9a0d4e7308
+
+vector offset name-outside-the-basic-latin-set
+purpose a name given decomposed, so the bytes in the message are the NFC form and not the bytes the caller passed
+key-source text
+key-text-utf8 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-material 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-fingerprint a81aca79ba5e5ad2c583a7c6ffb8622dbf41a5184530e82bd71a6adb8da68160
+name-utf8 65cc812d6465706f73697465642d656e65726779
+name-nfc-utf8 c3a92d6465706f73697465642d656e65726779
+kind location
+transform offset
+blinded blinded
+low-decimal 0.0
+low-bits 0000000000000000
+high-decimal 1000.0
+high-bits 408f400000000000
+uncertainty-decimal 12.5
+uncertainty-bits 4029000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 62.5
+half-width-bits 404f400000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f310000000000000013c3a92d6465706f73697465642d656e6572677900000000000000066f6666736574
+digest 07553be3324de69c92c4a529a0be58928e30f1919622ba7fbf66df3ace481fc9
+offset-decimal -58.91946041966727
+offset-bits c04d75b0e10837fb
+
+vector offset name-of-exactly-one-block
+purpose a name whose UTF-8 encoding is exactly one SHA-256 block, which is where a hand-written digest goes wrong
+key-source text
+key-text-utf8 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-material 626c656e64652d7075626c69736865642d766563746f722d737472696e672d30303031
+key-fingerprint a81aca79ba5e5ad2c583a7c6ffb8622dbf41a5184530e82bd71a6adb8da68160
+name-utf8 612d706172616d657465722d6e616d652d6f662d65786163746c792d6f6e652d7368612d3235362d626c6f636b2d696e2d7574662d382d303030303030303030
+name-nfc-utf8 612d706172616d657465722d6e616d652d6f662d65786163746c792d6f6e652d7368612d3235362d626c6f636b2d696e2d7574662d382d303030303030303030
+kind location
+transform offset
+blinded blinded
+low-decimal 100.0
+low-bits 4059000000000000
+high-decimal 200.0
+high-bits 4069000000000000
+uncertainty-decimal 2.0
+uncertainty-bits 4000000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 10.0
+half-width-bits 4024000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f310000000000000040612d706172616d657465722d6e616d652d6f662d65786163746c792d6f6e652d7368612d3235362d626c6f636b2d696e2d7574662d382d30303030303030303000000000000000066f6666736574
+digest 9a9d1954bc5066a7b9cae37094c34731fe214d9cf800873809c4dbcf8831b00e
+offset-decimal 2.079192794559532
+offset-bits 4000a22fd4f5b240
+
+vector offset minimum-length-blinding-string
+purpose the shortest string the key module admits, so an implementation can check its own floor against this one
+key-source text
+key-text-utf8 766563746f722d6b65792d3030303031
+key-material 766563746f722d6b65792d3030303031
+key-fingerprint 3cffea64a04030342530fb2af6b052a4b1551898ebff80ce8d1e53a90446727d
+name-utf8 6d617373
+name-nfc-utf8 6d617373
+kind location
+transform offset
+blinded blinded
+low-decimal 100.0
+low-bits 4059000000000000
+high-decimal 200.0
+high-bits 4069000000000000
+uncertainty-decimal 2.0
+uncertainty-bits 4000000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 10.0
+half-width-bits 4024000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f3100000000000000046d61737300000000000000066f6666736574
+digest ffe5ec6c61aaed3021d9ee1af3b89421a6a2915129291e2713e1fa744a96c2ee
+offset-decimal 9.992042092520345
+offset-bits 4023fbecf0ef42b5
+
+vector offset key-material-longer-than-one-block
+purpose material one byte past a SHA-256 block, arriving as bytes rather than as text, which is the case a keyed digest hashes the key for
+key-source bytes
+key-text-utf8 -
+key-material 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40
+key-fingerprint ece64166db95ab87e3215579cfdc8e6be99ba31300942e63e164eb2577c67ad3
+name-utf8 6d617373
+name-nfc-utf8 6d617373
+kind location
+transform offset
+blinded blinded
+low-decimal 100.0
+low-bits 4059000000000000
+high-decimal 200.0
+high-bits 4069000000000000
+uncertainty-decimal 2.0
+uncertainty-bits 4000000000000000
+multiple-decimal 5.0
+multiple-bits 4014000000000000
+half-width-decimal 10.0
+half-width-bits 4024000000000000
+context 0000000000000018626c656e64652f6c6f636174696f6e2d6f66667365742f3100000000000000046d61737300000000000000066f6666736574
+digest 66e666d8345459f6758037b005a15291e703e3f089d2aeca7610ac1248114c71
+offset-decimal -1.9609369700569097
+offset-bits bfff5fff71be9690
+
+vector mapping all-zero-digest-on-the-unit-interval
+purpose the lower endpoint, which is reachable and is the endpoint
+digest 0000000000000000000000000000000000000000000000000000000000000000
+leading-integer 0
+low-decimal 0.0
+low-bits 0000000000000000
+high-decimal 1.0
+high-bits 3ff0000000000000
+value-decimal 0.0
+value-bits 0000000000000000
+
+vector mapping all-one-digest-on-the-unit-interval
+purpose the upper endpoint, where the exact value is below it and the conversion rounds onto it, so the mapping steps back one double
+digest ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+leading-integer 18446744073709551615
+low-decimal 0.0
+low-bits 0000000000000000
+high-decimal 1.0
+high-bits 3ff0000000000000
+value-decimal 0.9999999999999999
+value-bits 3fefffffffffffff
+
+vector mapping all-zero-digest-on-a-symmetric-interval
+purpose the lower endpoint of an interval an offset is drawn from
+digest 0000000000000000000000000000000000000000000000000000000000000000
+leading-integer 0
+low-decimal -10.0
+low-bits c024000000000000
+high-decimal 10.0
+high-bits 4024000000000000
+value-decimal -10.0
+value-bits c024000000000000
+
+vector mapping all-one-digest-on-a-symmetric-interval
+purpose the upper end of the same interval, where the exact value is representable and no step back is taken
+digest ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+leading-integer 18446744073709551615
+low-decimal -10.0
+low-bits c024000000000000
+high-decimal 10.0
+high-bits 4024000000000000
+value-decimal 9.999999999999998
+value-bits 4023ffffffffffff
+
+vector mapping digest-differing-outside-the-bytes-read
+purpose the leading bytes of the all-zero digest and different bytes after them, which the mapping does not read, so this record and the first one carry one number
+digest 0000000000000000ffffffffffffffffffffffffffffffffffffffffffffffff
+leading-integer 0
+low-decimal 0.0
+low-bits 0000000000000000
+high-decimal 1.0
+high-bits 3ff0000000000000
+value-decimal 0.0
+value-bits 0000000000000000
